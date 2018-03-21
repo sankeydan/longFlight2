@@ -1,0 +1,242 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+```{R}
+
+rm(list = ls())
+
+## OPTIONS
+
+
+
+## OBJECTS 
+
+flight.length = 71507
+total.bins = 50
+
+# LIBRARIES
+
+library(longFlight)
+
+
+# DATA
+
+files = list.files ( file.path (PROJHOME , "Output" , "mACC") )
+arr = array(NA, c(flight.length, 4,length(files)))
+for (  i  in 1:length(files)){
+  
+  load( file.path(PROJHOME , "Output" , "mACC" , files[i]))
+ # print(nrow(data))
+  arr[1:nrow(data),,i] = data
+}
+
+
+
+```
+
+## Convert rows from flaps to time
+
+```{R}
+
+flaps = arr[,3,2] # flaps
+time = as.integer(round(arr[,4,4])  )
+
+sq = as.integer(seq( min(time,na.rm=T) , max(time,na.rm=T), length.out = total.bins))
+
+Time.min = (sq - min(sq) +1)/60
+
+store = vector()
+for ( i in 1:total.bins){
+  
+  #i = 29
+  store = c(store , ( which( abs(round(time) - round(sq[i]) ) == min( abs(round(time) - round(sq[i])) ))[1]))
+}
+
+store = c(store, length(time))
+
+mean = vector()
+sd   = vector()
+
+for ( i in 1:(length(store)-1)){
+  
+  mean = c(mean, mean(flaps[store[i]:store[i+1]])) # this odd looking technique allows for odd numbers of data per bin
+  sd   = c(sd  ,   sd(flaps[store[i]:store[i+1]]))
+}
+
+plot(mean~ Time.min)
+```
+```{R}
+# flap frequency - per second
+ff.ps = matrix(NA, 10864 ,6) # max seconds per individual is 10864, 180 mins 
+len.pb = rep(NA,6)
+
+for ( j in 1:6){
+  
+  
+  # flaps per second 
+  fps = as.vector(table ( round( arr[,4,j],0)))
+  cum.fps= c(0,cumsum(fps))
+  
+  # flap frequency per second
+  ffps = rep(NA, length(fps))
+  ind  = rep(NA, length(fps))
+  
+  for ( i in 1:length(fps)){
+    
+    ffps[i] = median( arr[(cum.fps[i]+1):cum.fps[i+1],3,j])
+    
+  }
+  
+  len.pb[j] = length(ffps)
+  ff.ps[1:len.pb[j],j] = ffps
+  
+}
+
+plot(rowMeans(ff.ps))
+
+```
+```{R}
+# dba  - per second
+dba.ps = matrix(NA, 10864 ,6) # max seconds per individual is 10864, 180 mins 
+len.pb = rep(NA,6)
+
+for ( j in 1:6){
+  
+  
+  # dba per second 
+  dba = as.vector(table ( round( arr[,4,j],0)))
+  cum.dba= c(0,cumsum(dba))
+  
+  # flap frequency per second
+  dbaps = rep(NA, length(dba))
+  ind  = rep(NA, length(dba))
+  
+  for ( i in 1:length(dba)){
+    
+    dbaps[i] = median( arr[(cum.dba[i]+1):cum.dba[i+1],1,j])
+    
+  }
+  
+  len.pb[j] = length(dbaps)
+ # print( length( dbaps))
+  dba.ps[1:len.pb[j],j] = dbaps
+  
+}
+
+dba.ps[dba.ps>100] = NA
+plot(rowMeans(dba.ps))
+
+```
+```{R}
+
+## data from GPS 
+
+load(file.path(PROJHOME , "Output" , "split-mat.rda"))
+load(file.path( PROJHOME, "Output", "gGPS", "g2.34.rda")) 
+
+fission = rep(NA,6)
+for ( i in 1:6){
+fission[i]= (which(split.mat[,i] == T)[1])/5
+}
+
+par(mfrow = c(3,2))
+
+for ( i in 1:6) {
+  plot( ff.ps[,i])
+  abline( v = fission[i])
+}
+```
+
+```{R}
+mn = min(floor(fission))
+
+# cohesive array
+ff.coh = ff.ps[1:mn,]
+
+
+#uncohesive array
+
+rows.of.data = rep(NA,6)
+for ( i in 1:6){
+  rows.of.data[i] = length(na.omit(ff.ps[,i]))
+}
+
+length.solo = rows.of.data - ceiling(fission)
+max.solo.flight = max(length.solo)
+
+ff.uncoh = matrix(NA, max.solo.flight,6)
+
+for ( i in 1:6){
+  ff.uncoh[1:length.solo[i],i] = ff.ps[ceiling(fission[i]):(rows.of.data[i]-1),i]
+}
+
+plot(rowMeans(ff.uncoh))
+  
+save(ff.coh, file =  file.path(PROJHOME , "Output" , "ff-coh.rda"))
+save(ff.uncoh,file=  file.path(PROJHOME , "Output" , "ff-uncoh.rda"))
+
+```
+
+```{R}
+mn = min(floor(fission))
+
+# cohesive array
+dba.coh = dba.ps[1:mn,]
+
+
+#uncohesive array
+
+rows.of.data = rep(NA,6)
+for ( i in 1:6){
+  rows.of.data[i] = length(na.omit(dba.ps[,i]))
+}
+
+length.solo = rows.of.data - ceiling(fission)
+max.solo.flight = max(length.solo)
+
+dba.uncoh = matrix(NA, max.solo.flight,6)
+
+for ( i in 1:6){
+  dba.uncoh[1:length.solo[i],i] = dba.ps[ceiling(fission[i]):(rows.of.data[i]-1),i]
+}
+
+plot(rowMeans(dba.coh))
+  
+save(dba.coh, file =  file.path(PROJHOME , "Output" , "dba-coh.rda"))
+save(dba.uncoh,file=  file.path(PROJHOME , "Output" , "dba-uncoh.rda"))
+
+```
+
+```{r}
+
+
+
+```
+
+```{R}
+
+
+{
+  par( mfrow = c(4,2))
+  for (  i  in 1:length(files)){
+    
+    bm_plotDS(arr[store[24]:dim(arr)[1],3,i], total.bins = 200, plot.error = F)
+  }
+  bm_plotDS(rowMeans(arr[,3,], na.rm = T), total.bins = 200, plot.error = F)
+  
+}
+
+```
+
+
+```{R}
+
+per.min(flaps = arr[,3,1], time = as.integer(arr[,4,1]))
+
+```
+
+

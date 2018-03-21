@@ -1,0 +1,388 @@
+
+
+## 1. GPS.
+
+```{R}
+
+rm(list= ls())
+## DATA
+
+library(longFlight)
+load( file.path( PROJHOME, "Output", "gGPS", "g2.34.rda")) # load group flight
+pigeon = names(data[1,1,]) # pigeon names
+
+## OBJECTS
+
+fis.dist = 50 # Distance in metres at which an individual is considered to have split from the group. See methods for justification
+cuts = 3 # cuts in the data for the heatplots
+
+## LIBRARIES 
+
+library(ggplot2)
+library(viridis)
+library(cowplot)
+
+full = data
+
+# options 
+
+plot.density = F
+
+
+```
+
+
+```{R}
+
+if ( ! file.exists( file.path(PROJHOME , "Output", "centroid.rda"))){
+  
+  # centroid of whole group regardless of fission
+  centroid = data.frame( x = apply(data[,"lon",], 1, mean), y = apply(data[,"lat",], 1, mean)) 
+  
+  # distance to centroid
+  dist2cent = matrix(NA, nrow(data[,,1]), length(pigeon)) 
+  for ( j in 1:nrow(dist2cent)){ # for each timestep
+    for ( k in 1:length(pigeon)){ # for each pigeon
+      dist2cent[j,k] = get_dist( data[j,"lon",k], data[j, "lat", k], centroid$x[j], centroid$y[j] , method = "distance") # get the distance between the individual and the centroid
+    }
+  }
+  
+  fis.data = data
+  omit.list = list() # a list will store omitted individuals. 
+  
+  for ( j in 1:nrow(dist2cent)){ # for each timestamp 
+    
+    vec = vector() # set up a vector to record ommitted individuals
+    while( length( which(dist2cent[j,]  > fis.dist)) >0){ # while there is at least one individual over the fission distance threshold
+      
+      omit = which(dist2cent[j,]== max(dist2cent[j,], na.rm = T) ) # which individual needs to be removed?
+      fis.data[j,c("lat","lon"), omit] = NA # make NA the latitude and the longitude of the furthest individual
+      centroid$x[j] = mean(fis.data[j,"lon",], na.rm = T) # calcutate new centroid
+      centroid$y[j] = mean(fis.data[j,"lat",], na.rm = T)
+      
+      for( k in 1:length(pigeon)){
+        dist2cent[j,k] = get_dist( fis.data[j,"lon",k], fis.data[j, "lat", k], centroid$x[j], centroid$y[j] , method = "distance") # distance to centroid - same as above
+      }
+      
+      vec = c(vec, omit) # build the vector of omitted individuals
+    }
+    omit.list[[j]] = vec # store in the list
+  }
+  
+  # When did each individual split? 
+  
+  split.mat = matrix(NA, nrow(dist2cent),length(pigeon))
+  
+  for ( k in 1:length(pigeon)){
+    for ( j in 1:nrow(dist2cent)){
+      
+      if ( length( omit.list[[j]]) == (length(pigeon)-1)){
+      split.mat[j,k] = T
+      
+      } else {
+        split.mat[j,k] = any(omit.list[[j]]==k)
+      }
+    }
+  }
+  
+  length.omit = rep(NA, nrow(dist2cent)) # total omitted individuals per time stamp- using this object later for unbiased centroid speed
+  
+  omit.mat = matrix( 0, length(pigeon), 1, dimnames = list(pigeon,NULL))
+  for ( j in 1:nrow(dist2cent)){  # for each timestamp 
+    
+    if ( length( omit.list[[j]] > 0 )) { # if there were any ommitted individuals 
+      
+      omit.mat[pigeon[omit.list[[j]]],] =    
+        omit.mat[pigeon[omit.list[[j]]],] +1 # add one for each timestep
+    }
+    
+    length.omit[j] = length( omit.list[[j]])
+    
+  }
+  
+  plot(length.omit)
+  
+  save( centroid, file = file.path(PROJHOME , "Output", "centroid.rda"))
+  save( dist2cent,file = file.path(PROJHOME , "Output", "dist2cent.rda"))
+  save( omit.mat ,file = file.path(PROJHOME , "Output", "omit-mat.rda"))
+  save(length.omit,file= file.path(PROJHOME,  "Output", "length-omit.rda"))
+  save( split.mat,file = file.path(PROJHOME,  "Output", "split-mat.rda") )
+} else {
+  load (  file.path(PROJHOME , "Output", "centroid.rda"))
+  load (  file.path(PROJHOME , "Output", "dist2cent.rda"))
+  load (  file.path(PROJHOME , "Output", "omit-mat.rda"))
+  load (  file.path(PROJHOME,"Output", "length-omit.rda"))
+}
+```
+
+
+```{R}
+
+obj = fb_lr_d2c(data,centroid,dist2cent)
+
+frontback.res.cent = obj[[1]]
+leftright.res.cent = obj[[2]]
+```
+
+```{R}
+
+
+coh = which(length.omit == 1)[1]
+
+which(length.omit == 1)[1]
+```
+
+
+```{R}
+
+plot(rowMeans(dist2cent))
+
+dist2cent          =          dist2cent[1:coh,]
+frontback.res.cent = frontback.res.cent[1:coh,]
+leftright.res.cent = leftright.res.cent[1:coh,]
+dat  =                            data[1:coh,,]
+centroid =                     centroid[1:coh,]
+```
+
+```{R}
+
+if(! file.exists(file.path(PROJHOME , "Output" , "GPS-coh.rda"))){
+  GPS.coh = dat
+  save( GPS.coh , file = file.path(PROJHOME,"Output","GPS-coh.rda") )
+}
+
+```
+
+
+
+
+
+
+```{R}
+
+
+if (plot.density){
+  
+  rows = floor( nrow(dat)/cuts)
+  
+  g1 = build_heat(leftright.res.cent, frontback.res.cent, 1, cuts, uber_smoothness = 300)
+  
+  g2 = build_heat(leftright.res.cent, frontback.res.cent, 2, cuts, uber_smoothness = 300)
+  
+  g3 = build_heat(leftright.res.cent, frontback.res.cent, 3, cuts, uber_smoothness = 300)
+  
+  
+  #hist(leftright.res.cent)
+  
+  ggdraw () +
+    draw_plot(g1,0,0,0.4,1) +
+    draw_plot(g2,0.35,0,0.4,1) + 
+    draw_plot(g3,0.7,0,0.4,1)
+}
+
+```
+
+
+
+```{R}
+
+dist.arr = array(NA, c(coh,6,6))
+for ( i in 1:6){
+  for ( j in 1:6){
+    if(i!=j){
+      dist.arr[,j,i] =  get_dist(dat[,"lon",i], 
+                                 dat[,"lat",i],
+                                 dat[,"lon",j],
+                                 dat[,"lat",j], method = "distance")
+    }
+  }
+}
+
+nn.mat = matrix(NA, coh, 6)
+
+for ( i in 1:6){
+  nn.mat[,i] = apply( dist.arr[,,i], 1, min, na.rm = T)
+}
+head(nn.mat)
+plot(rowMeans(nn.mat))
+
+```
+
+```{R}
+
+{plot(data[,"lon",1],data[,"lat",1])
+  
+  for ( i in 2:6){
+    lines( data[,"lon",i],data[,"lat",i] , col = i)
+  }
+}
+
+
+
+```
+
+
+
+```{R}
+if( !file.exists(file.path( PROJHOME , "Figures" , "Map.pdf"))){
+  
+  pdf( file.path( PROJHOME , "Figures" , "Map.pdf"))
+  
+  plot_map(data)
+  
+  dev.off()
+}
+
+```
+
+
+
+```{R}
+
+
+y = bm_plotDS(na.omit(rowMeans(nn.mat)),total.bins = 98,plot.error =F, return_means = F)
+
+
+```
+
+```{R}
+
+nn.coh = nn.mat
+save(nn.coh, file = file.path(PROJHOME , "Output", "nn-coh.rda"))
+
+
+```
+
+
+
+
+
+## DESCRIPTIVES
+
+## 6. DESCRIPTIVES
+
+### LOAD DATA
+
+```{R}
+
+# SOLO SPEEDS AND OTHER METRICS
+load(file.path(PROJHOME , "Output" , "metrics.rda"))
+
+# RELEASE SITE COORDINATES
+load(file.path ( PROJHOME , "Data" , "release-site-coordinates.rda"))
+```
+
+
+```{R}
+metrics = metrics[1:535,]
+```
+
+```{R}
+descriptives = data.frame ( 
+  type = c("group","solo","all"),
+  time.taken = c(
+    median( metrics$time.taken [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Gro"], na.rm = T)  ,
+    median( metrics$time.taken [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Sol"], na.rm = T)  ,
+    median( metrics$time.taken [metrics$miles == 8 & metrics$dir == "E" ], na.rm = T)  ),
+  total.dist = c(
+    median( metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Gro"], na.rm = T)  ,
+    median( metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Sol"], na.rm = T)  ,
+    median( metrics$total.dist [metrics$miles == 8 & metrics$dir == "E"], na.rm = T) ),
+  sd.time.taken = c(
+    sd( metrics$time.taken [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Gro"], na.rm = T)  ,
+    sd( metrics$time.taken [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Sol"], na.rm = T)  ,
+    sd( metrics$time.taken [metrics$miles == 8 & metrics$dir == "E" ], na.rm = T)  ),
+  sd.total.dist = c(
+    sd( metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Gro"], na.rm = T)  ,
+    sd( metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Sol"], na.rm = T)  ,
+    sd( metrics$total.dist [metrics$miles == 8 & metrics$dir == "E"], na.rm = T) ),
+  accuracy = c(
+    median(rsc$beeline[4]/  metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Gro"], na.rm = T)  ,
+    median(rsc$beeline[4]/  metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Sol"], na.rm = T)  ,
+    median(rsc$beeline[4]/  metrics$total.dist [metrics$miles == 8 & metrics$dir == "E"], na.rm = T)  ),
+  sd.accuracy = c(
+    sd(rsc$beeline[4]/  metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Gro"], na.rm = T)  ,
+    sd(rsc$beeline[4]/  metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Sol"], na.rm = T)  ,
+    sd(rsc$beeline[4]/  metrics$total.dist [metrics$miles == 8 & metrics$dir == "E"], na.rm = T)  )
+)
+
+
+
+```
+
+```{R}
+
+descriptives
+
+```
+
+
+
+```{R}
+
+load(file.path(PROJHOME , "Output" , "metrics.rda"))
+
+metrics = metrics[c(536:542,544),]
+```
+
+```{R}
+descriptives = data.frame ( 
+  type = c("group","solo","all"),
+  time.taken = c(
+    median( metrics$time.taken [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Gro"], na.rm = T)  ,
+    median( metrics$time.taken [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Sol"], na.rm = T)  ,
+    median( metrics$time.taken [metrics$miles == 8 & metrics$dir == "E" ], na.rm = T)  ),
+  total.dist = c(
+    median( metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Gro"], na.rm = T)  ,
+    median( metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Sol"], na.rm = T)  ,
+    median( metrics$total.dist [metrics$miles == 8 & metrics$dir == "E"], na.rm = T) ),
+  sd.time.taken = c(
+    sd( metrics$time.taken [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Gro"], na.rm = T)  ,
+    sd( metrics$time.taken [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Sol"], na.rm = T)  ,
+    sd( metrics$time.taken [metrics$miles == 8 & metrics$dir == "E" ], na.rm = T)  ),
+  sd.total.dist = c(
+    sd( metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Gro"], na.rm = T)  ,
+    sd( metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Sol"], na.rm = T)  ,
+    sd( metrics$total.dist [metrics$miles == 8 & metrics$dir == "E"], na.rm = T) ),
+  accuracy = c(
+    median(rsc$beeline[4]/  metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Gro"], na.rm = T)  ,
+    median(rsc$beeline[4]/  metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Sol"], na.rm = T)  ,
+    median(rsc$beeline[4]/  metrics$total.dist [metrics$miles == 8 & metrics$dir == "E"], na.rm = T)  ),
+  sd.accuracy = c(
+    sd(rsc$beeline[4]/  metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Gro"], na.rm = T)  ,
+    sd(rsc$beeline[4]/  metrics$total.dist [metrics$miles == 8 & metrics$dir == "E" & metrics$g_s == "Sol"], na.rm = T)  ,
+    sd(rsc$beeline[4]/  metrics$total.dist [metrics$miles == 8 & metrics$dir == "E"], na.rm = T)  )
+)
+
+
+
+```
+
+```{R}
+
+descriptives
+
+```
+
+```{R}
+
+1624.5/60
+
+
+```
+
+```{R}
+
+for ( i in 1:6){
+  
+  print(sum( full[,"speed",i])/1000/5)
+}
+
+```
+
+
+```{R}
+
+
+
+```
