@@ -2,5 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
-Solution/*/Data/GPS
-Solution/*/Data/ACC
+**/Data/GPS
+**/Data/ACC
+**/Output/gGPS
+**/Output/mACC
+**/Output/mGPS
