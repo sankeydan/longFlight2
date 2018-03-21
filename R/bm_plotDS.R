@@ -18,15 +18,17 @@ bm_plotDS = function( vec = NULL ,
 
   # vec = y
   #
-  # matr = nn.coh
+  # matr = dba.coh
   # total.bins = 100
-  # error = "SE"
+  # error = "SD"
   # tick.size = 0.25
   # ylim.scale = 2
   # plot.error = T
   # ylab = "y"
   # xlab = "x"
   # return_means = T
+  # ylim = NULL
+  # x = NULL
 
   if ( !is.null(matr)){
 
@@ -34,7 +36,7 @@ bm_plotDS = function( vec = NULL ,
     sq =  floor(seq( 0, nrow(matr), length.out =  total.bins))
 
     mean = rep ( NA, length(sq))
-    sd = rep ( NA, length (sq))
+    sd =   rep ( NA, length (sq))
 
     len = sq[2]-sq[1]
 

@@ -3,220 +3,68 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-Statistical analysis 
+###1. Pigeon schematic
 
+#### Load data
 
 ```{R}
 
-library(lme4)
-# for sample data and tool functions
-library(sjmisc)
-data(efc)
-# prepare group variable
-efc$grp = as.factor(efc$e15relat)
-levels(x = efc$grp) <- get_labels(efc$e15relat)
-# data frame for fitted model
-mydf <- data.frame(neg_c_7 = efc$neg_c_7,
-                   sex = to_factor(efc$c161sex),
-                   c12hour = efc$c12hour,
-                   barthel = efc$barthtot,
-                   grp = efc$grp)
-# fit glmer
-fit2 <- lmer(neg_c_7 ~ sex + c12hour + barthel + (1 | grp),
-             data = mydf)
-
+load( file.path (PROJHOME , "Output" , "nn-coh.rda"))
 
 ```
 
 ```{R}
+floor(floor(dim(nn.coh)[1]/5/60)/3)
 
-rm(list=ls())
+mins = 5
+step.len = 5*5*60
+len = floor(97/mins)
+step = rep(step.len, len)
+cum.step = c(1,cumsum(step)+1)
 
-#data
+mean = rep(NA,len)
+sd   = rep(NA,len)
+for ( i in 1:len){
+  mean[i] = mean(nn.coh[cum.step[i]:cum.step[i+1],])
+  sd  [i] = sd  (nn.coh[cum.step[i]:cum.step[i+1],])
+}
 
-load( file.path( PROJHOME , "Output" , "nn.rda"))
-load( file.path( PROJHOME , "Output" , "arr.coh.rda"))
-load( file.path( PROJHOME , "Output" , "dat-coh.rda")) # load group flight
-
-
-coh = dim(nn.mat)[1] # time of split
-len = ncol(nn.mat)+1 # number of individuals plus a group level measure. 
-cols = c(rainbow(6),"black")
-time = c(1:coh)/60/5
-
+mean
 ```
 
 ```{R}
+if( !file.exists( PROJHOME , "Figures", "pidge.schem.pdf")){
+pdf( file.path (PROJHOME, "Figures" , "pidge.schem.pdf"))
+mean2 = mean/2
+mean2 = mean/2
 
-coefs = matrix( NA, len, 2)
+par( mar = c(5,5,5,5))
+plot(-15:15,seq(-4,4,length.out = 31) ,type = "n", bty = "n", yaxt = "n", xaxt = "n", ylab = "", xlab = "")
+axis( 2, at= c(-4,-2,0,2), labels = c(0,2,4,6))
+mtext ( "Distance (m)", 2 , line = 3)
+segments( -9,0-mean2[1],-9,0+mean2[1])
+#points(-9,0)
+#segments( -9-sd[1],0 ,-9+sd[1],0)
 
-for ( i in 1:ncol(nn.mat)){
-  
-mod = lm(nn.mat[,i]~time)
-coefs[i,] = mod$coefficients
+segments( 9,0-mean2[len],9,0+mean2[len])
+#points(9,0)
+#segments( 9-sd[len],0 ,9+sd[len],0)
 
-}
-
-
-
-mod = lm(rowMeans(nn.mat)~time)
-coefs[len,] =  mod$coefficients
-
-lwid = c(rep(1,6),3.5)
-{
-plot( time-1, time, ylim = c(0,6), type = "n", ylab = "Distance to nearest neighbour (m)",
-      xlab = "Time (min)")
-
-  for ( i in 1:len){
-abline( coefs[i,1], coefs[i,2], col = cols[i], lwd = lwid[i])
-}
-}
-```
-
-
-```{R}
-
-time = seq(0,98, length.out = dim(arr.coh)[1])
-
-
-coefs = matrix( NA, len, 2)
-
-for ( i in 1:dim(arr.coh)[3]){
-  
-mod = lm(arr.coh[,3,i]~time)
-coefs[i,] = mod$coefficients
-
-}
-
-
-
-mod = lm(rowMeans(arr.coh[,3,])~time)
-coefs[len,] =  mod$coefficients
-
-lwid = c(rep(1,6),3.5)
-{
-plot( time-1, time, ylim = c(6.7,7.2), type = "n", ylab = "Flap frequency (Hz)",
-      xlab = "Time (min)")
-
-  for ( i in 1:len){
-abline( coefs[i,1], coefs[i,2], col = cols[i], lwd = lwid[i])
-}
-}
-
-```
-
-```{R}
-
-time = c(1:dim(dat)[1])/60/5
-coefs = matrix( NA, len, 2)
-
-for ( i in 1:dim(dat)[3]){
-  
-mod = lm(dat[,5,i]~time)
-plot    (dat[,5,i]~time)
-coefs[i,] = mod$coefficients
-
-}
-
-
-
-mod = lm(rowMeans(dat[,5,])~time)
-coefs[len,] =  mod$coefficients
-
-lwid = c(seq(2,4,length.out=6),1)
-{
-plot( time-1, time, ylim = c(11,20), type = "n", ylab = "Ground speed (m/s)",
-      xlab = "Time (min)")
-
-  for ( i in 1:len){
-abline( coefs[i,1], coefs[i,2], col = cols[i], lwd = lwid[i])
-}
-}
-
-```
-
-
-```{R}
-
-pdf( file.path (PROJHOME, "Figures", "mixed.mod.pdf"))
-par(mfrow = c(2,3))
-coefs = matrix( NA, len, 2)
-
-for ( i in 1:ncol(nn.mat)){
-  
-mod = lm(nn.mat[,i]~time)
-coefs[i,] = mod$coefficients
-
-}
-
-
-
-mod = lm(rowMeans(nn.mat)~time)
-coefs[len,] =  mod$coefficients
-
-lwid = c(rep(1,6),3.5)
-{
-plot( time-1, time, ylim = c(0,6), type = "n", ylab = "Distance to nearest neighbour (m)",
-      xlab = "Time (min)")
-
-  for ( i in 1:len){
-abline( coefs[i,1], coefs[i,2], col = cols[i], lwd = lwid[i])
-}
-}
-
-
-time = seq(0,98, length.out = dim(arr.coh)[1])
-
-
-coefs = matrix( NA, len, 2)
-
-for ( i in 1:dim(arr.coh)[3]){
-  
-mod = lm(arr.coh[,3,i]~time)
-coefs[i,] = mod$coefficients
-
-}
-
-
-
-mod = lm(rowMeans(arr.coh[,3,])~time)
-coefs[len,] =  mod$coefficients
-
-lwid = c(rep(1,6),3.5)
-{
-plot( time-1, time, ylim = c(6.7,7.2), type = "n", ylab = "Flap frequency (Hz)",
-      xlab = "Time (min)")
-
-  for ( i in 1:len){
-abline( coefs[i,1], coefs[i,2], col = cols[i], lwd = lwid[i])
-}
-}
-
-
-time = c(1:dim(dat)[1])/60/5
-coefs = matrix( NA, len, 2)
-
-for ( i in 1:dim(dat)[3]){
-  
-mod = lm(dat[,5,i]~time)
-#plot    (dat[,5,i]~time)
-coefs[i,] = mod$coefficients
-
-}
-
-
-
-mod = lm(rowMeans(dat[,5,])~time)
-coefs[len,] =  mod$coefficients
-
-lwid = c(seq(2,2.5,length.out=6),1)
-{
-plot( time-1, time, ylim = c(11,20), type = "n", ylab = "Ground speed (m/s)",
-      xlab = "Time (min)")
-
-  for ( i in 1:len){
-abline( coefs[i,1], coefs[i,2], col = cols[i], lwd = lwid[i])
-}
-}
 dev.off()
+} 
+mean2 = mean/2
+mean2 = mean/2
+
+par( mar = c(5,5,5,5))
+plot(-15:15,seq(-4,4,length.out = 31) ,type = "n", bty = "n", yaxt = "n", xaxt = "n", ylab = "", xlab = "")
+axis( 2, at= c(-4,-2,0,2), labels = c(0,2,4,6))
+mtext ( "Distance (m)", 2 , line = 3)
+segments( -9,0-mean2[1],-9,0+mean2[1])
+#points(-9,0)
+#segments( -9-sd[1],0 ,-9+sd[1],0)
+
+segments( 9,0-mean2[len],9,0+mean2[len])
+#points(9,0)
+#segments( 9-sd[len],0 ,9+sd[len],0)
+
 ```

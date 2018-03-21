@@ -6,10 +6,14 @@ output: html_notebook
 
 
 ####1. Nearest neighbour
+#####a. Group level root function
+#####b. individual level models
 ####2. Flap frequency
 ####3. Group speed 
 ####4. Flap frequency for solo flight (after split)
-####5. Frontback/leftright dist to the centroid
+####5. Dist to the centroid
+#####a. Frontback
+#####b. Leftright
 ####6. Dorsal body amplitude
 
 ```{R, echo = F}
@@ -37,8 +41,7 @@ library(mgcv)
 load( file.path( PROJHOME , "Output" , "GPS-coh.rda"))
 load( file.path( PROJHOME , "Output" , "ff-coh.rda"))
 load( file.path( PROJHOME , "Output" , "dba-coh.rda"))
-load( file.path( PROJHOME , "Output" , "nn-coh.rda")) # load group flight
-load( file.path( PROJHOME , "Output" , "ff-uncoh.rda"))
+load( file.path( PROJHOME , "Output" , "nn-coh.rda")) 
 
 coh = dim(nn.coh)[1] # time of split
 len = ncol(nn.coh)+1 # number of individuals plus a group level measure. 
@@ -50,18 +53,61 @@ time = c(1:coh)/60/5
 
 ### 1. nearest neighbour 
 
-```{R, echo = F}
+#### a) Group level root function
 
-# Options
 
-scale = F
+```{R}
+
+# group mean distance
+y = (rowMeans(nn.coh))
+
+# root transforms to try
+roots = seq(1,1.4,0.1)
+
+# object for r squared 
+r.sq = rep(NA,length(roots))
+
+# loop to compare root transforms 
+
+for (  i in 1:length(roots)){
+  
+  x = c(1:length(y))/5/60
+  mod2 = lm(y^(1/roots[i])~x)
+  
+  r.sq[i] = (summary(mod2)$r.squared)
+  plot(y~x)
+  
+  y2 = mod2$coefficients[1] + mod2$coefficients[2]*  x
+  lines(y2^roots[i]~x,col = "red")
+}
+```
+
+```{R}
+roots[which.max(r.sq)]
 
 ```
 
+```{R}
+mod2 = lm( lm(y^(1/ roots[which.max(r.sq)])~x) )
+
+summary(mod2)
+```
+
+#### Plot 
+
+```{R}
+
+pdf( file.path(PROJHOME , "Figures" , "Group_dist2neighbour.pdf"))
+y = bm_plotDS(matr = nn.coh, error = "SD", ylim = c(0,10), x = c(1,97), xlab = "Time (min)", ylab = "Distance to nearest neighbour (m)")
+dev.off()
+bm_plotDS(matr = nn.coh, error = "SD", ylim = c(0,10), x = c(1,97), xlab = "Time (min)", ylab = "Distance to nearest neighbour (m)")
+```
+
+#### b) Individual level models 
+
 #### Autocorrelation 
 
-
-```{R, echo = F}
+```{R}
 
 acf(as.vector(nn.coh), lag.max = 1000)
 
@@ -70,60 +116,58 @@ acf(as.vector(nn.coh), lag.max = 1000)
 
 Seems to drop around 300 (to be safe, 400)
 
+# Which model is best? 
+
+```{R}
+
+AICs = matrix(NA,100,3)
+
+
+for ( i in 1:100){
+  mod= try( model2(nn.coh,400,scale = T))
+  AICs[i,] = mod[[3]]
+}
+
+```
+
+```{R}
+
+whi.mi = which.min(colMeans(AICs))
+print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
+```
+
+```{R}
+
+CIs = matrix( NA, 100, 2)
+for ( i in 1:100){
+  mod = model2( nn.coh, 400, scale = T, specify.model = whi.mi)
+  CIs[i,] = mod[[2]]
+}
+
+colMeans(CIs)
+```
+
+```{R}
+
+CIs.method2 = matrix( NA, 100, 2)
+for ( i in 1:100){
+  mod = model2( nn.coh, 400, scale = T, specify.model = whi.mi, conf.method = "confint")
+  CIs.method2[i,] = mod[[2]]
+}
+
+colMeans(CIs.method2)
+
+```
+
+```{R}
+
+t.test( CIs[,1],CIs.method2[,1])
+t.test( CIs[,2],CIs.method2[,2])
+
+```
 
 #### Build dataframe 
 
-```{R}
-
-for (  i in seq(1,2,0.1)){
-  print(i)
-#plot(rowMeans(nn.coh))
-
-
-x = c(1:length(y))/5/60
-mod = lm( y~x)
-mod2 = lm(y^(1/i)~x)
-
-#summary(mod)
-#summary(mod2)
-
-
-#c(AIC(mod), AIC(mod2))
-
-print(summary(mod2)$r.squared)
-plot(y~x)
-
-y2 = mod2$coefficients[1] + mod2$coefficients[2]*  x
-lines(y2^i~x,col = "red")
-}
-```
- 
-```{R}
-
-  pdf( file.path(PROJHOME , "Figures" , "Group_dist2neighbour.pdf"))
-y = bm_plotDS(matr = nn.coh, error = "SD", ylim = c(0,10), x = c(1,97), xlab = "Time (min)", ylab = "Distance to nearest neighbour (m)")
-dev.off()
-
-```
-
-
-```{R}
-y = bm_plotDS( y, total.bins =  100, return_means = T, plot.error = F, error = "SD")
-x = c(1:length(y))
-mod = lm( y~x)
-
-
-
-
-#abline(mod$coefficients[1],mod$coefficients[2],col="red", lwd = 3)
-```
-
-```{R}
-
-
-lm( )
-
-```
 
 ```{R, echo = F}
 
@@ -135,41 +179,14 @@ nn = data.frame ( nn = as.vector(nn.coh[sam,]),
                   id = as.factor(rep (1: ncol(nn.coh), each = sam.len)),
                   time = rep(time[sam], ncol(nn.coh)))
 
-if ( scale ){
-  nn$nn = scale(nn$nn)
-  nn$time = scale(nn$time)
-  sca.sam = scale(sam)
-  nn.coh = scale(nn.coh)
-} else {
-  sca.sam = sam/60/5
-}
 #head(nn)
 ```
 
-#### Fit fixed effects
+#### plot
 
 ```{R, echo = F}
 
 # fit glmer
-fit1 <- lmer(nn ~ time + (1+time| id), data = nn)
-fit2 <- lmer(nn ~ time + (1|id), data = nn)
-
-if ( min( c(AIC(fit1), AIC(fit2))) == AIC(fit1)){
-  print ("Include random slopes")
-  fit = fit1
-} else {
-  print ( "Do not include random slopes")
-  fit = fit2
-}
-
-sjp.lmer(fit, type =  "fe")
-```
-
-
-
-#### plot random effects
-
-```{R, echo = F}
 
 m2 =lmer( data = nn, nn ~ time + (1+ time|id)  ) 
 
@@ -185,21 +202,11 @@ liminf=(b[[1]][2]+a[2])-(e*2)
 mean_=(b[[1]][2]+a[2])
 limsup=(b[[1]][2]+a[2])+(e*2)
 #Plot betas and its errors
-{
-  dotchart(mean_$time, labels = rownames(mean_), cex = 0.5, xlab = "betas", xlim = c(min(mean_$time)-max(liminf), 
-                                                                                     max(mean_$time)+max(liminf)))
-  #add CI's...
-  for (i in 1:nrow(mean_)){
-    lines(x = c(liminf[i,1], limsup[i,1]), y = c(i,i)) 
-    
-  }
-  abline(v = 0, lty = 2)
-}
+
 ```
 
-#### final plot 
+```{R}
 
-```{R, echo = F}
 
 #make final plot
 plot(nn$nn ~ nn$time, col = cols, las = 1, ylim = c(0,6), xlab = "Time (min)", 
@@ -220,22 +227,14 @@ plot(nn$nn ~ nn$time, col = cols, las = 1, ylim = c(0,6), xlab = "Time (min)",
      type = "n",
      ylab = "Nearest neighbour distance (m)")
 for ( i in 1:6){
-    abline(a = as.numeric(b[[1]][i,1])+ as.numeric(a[1]), b= mean_$time[i], col = cols[i], lwd=2 )
+  abline(a = as.numeric(b[[1]][i,1])+ as.numeric(a[1]), b= mean_$time[i], col = cols[i], lwd=2 )
 }
 abline(a, lwd = 4)
 dev.off()
 ```
 
 
-### 2. Flap frequency 
-
-```{R, echo = F}
-
-# Options 
-
-scale = F
-
-```
+###2. Flap frequency 
 
 
 #### autocorrelation 
@@ -254,8 +253,8 @@ AICs = matrix(NA,100,3)
 
 
 for ( i in 1:100){
-mod= try( model2(ff.coh,50,scale = T))
-AICs[i,] = mod[[3]]
+  mod= try( model2(ff.coh,50,scale = T))
+  AICs[i,] = mod[[3]]
 }
 
 ```
@@ -307,8 +306,8 @@ sam.len = ind.len/50
 sam = sample( 1:ind.len, sam.len)
 
 ff = data.frame( ff = as.vector(ff.coh[sam,]),
-                   id = rep(1:6, each = length(sam)),
-                   time = rep(sam,6)/60)
+                 id = rep(1:6, each = length(sam)),
+                 time = rep(sam,6)/60)
 
 ```
 
@@ -324,28 +323,34 @@ b = ranef(fit, condVar = T)
 
 #make final plot
 {plot(ff$ff ~ ff$time, col = as.numeric(ff$id)+1, las = 1, ylim = c(6.6,7.3), xlab = "Time (min)", 
-     ylab = "Flap frequency (Hz)", type = "n")
-#and plot each random slope
-
-for ( i in 1:6){
-  
-  abline(a = as.numeric(b[[1]][i,1])+ as.numeric(a[1]), b= a[2], col = cols[i], lwd=2 )
-  
-}
+      ylab = "Flap frequency (Hz)", type = "n")
+  #and plot each random slope
+  for ( i in 1:6){
+    abline(a = as.numeric(b[[1]][i,1])+ as.numeric(a[1]), b= a[2], col = cols[i], lwd=2 )
+  }
 }
 #and general response
 abline(a, lwd = 4)
 
 ```
 
-### 3. Group speed 
-
-```{R, echo = F}
-# Options
-
-scale = F
-
+```{R}
+if( ! file.exists( file.path(PROJHOME , "Figures" , "ff.pdf"))){
+  pdf( file.path ( PROJHOME , "Figures", "ff.pdf"))
+  {plot(ff$ff ~ ff$time, col = as.numeric(ff$id)+1, las = 1, ylim = c(6.6,7.3), xlab = "Time (min)", 
+      ylab = "Flap frequency (Hz)", type = "n")
+  for ( i in 1:6){
+    abline(a = as.numeric(b[[1]][i,1])+ as.numeric(a[1]), b= a[2], col = cols[i], lwd=2 )
+  }
+}
+abline(a, lwd = 4)
+dev.off()
+}
 ```
+
+###3. Group speed 
+
+
 #### Autocorrelation
 
 ```{R, echo = F}
@@ -355,185 +360,75 @@ acf( as.vector(GPS.coh[, "speed",] ), lag.max = 400)
 
 250 seems fine here 
 
+# Which model is best? 
+
 ```{R}
-acf.const = 250
-dat = GPS.coh
-```
 
-```{R, echo = F}
+sp.coh = GPS.coh[, "speed",]
 
-sam.len = dim(dat)[1]/acf.const
-sam = sample( 1:dim(dat)[1], sam.len)
+AICs = matrix(NA,100,3)
 
-if ( !scale) {
-  sp = data.frame( sp =  as.vector(dat[sam, "speed",] ),
-                   time = rep(sam, 6)/5/60,
-                   id =  as.factor(rep(1:6, each = length(sam))))
-} else { 
-  sp = data.frame( sp = scale ( as.vector(dat[sam, "speed",] )),
-                   time = scale( rep(sam, 6)) ,
-                   id =  as.factor(rep(1:6, each = length(sam))))
+
+for ( i in 1:100){
+  mod= try( model2(sp.coh,250,scale = T))
+  AICs[i,] = mod[[3]]
 }
+
+```
+
+```{R}
+
+whi.mi = which.min(colMeans(AICs))
+print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
+```
+
+```{R}
+
+CIs = matrix( NA, 100, 2)
+for ( i in 1:100){
+  mod = model2( sp.coh, 250, scale = T, specify.model = whi.mi)
+  CIs[i,] = mod[[2]]
+}
+
+colMeans(CIs)
+```
+
+
+
+
+```{R, echo = F}
+
+sam.len = dim(sp.coh)[1]/250
+sam = sample( 1:dim(sp.coh)[1], sam.len)
+
+
+sp = data.frame( sp =  as.vector(sp.coh[sam,] ),
+                 time = rep(sam, 6)/5/60,
+                 id =  as.factor(rep(1:6, each = length(sam))))
+
 ```
 
 ```{R, echo = F}
 
-m1 = lm(sp$sp~sp$time)
-m2 = lmer(sp~time+(1|id),data=sp)
-m3 = lmer(sp~time+(1+time|id),data=sp)
+fit = lm(sp$sp~sp$time)
 
-min.aic = which.min( c(AIC(m1),AIC(m2),AIC(m3)))
-
-if ( min.aic == 1){
-  fit = lm(sp$sp~sp$time)
-  print( "simple linear model is best")
-} else { 
-  if( min.aic == 2){
-    fit = lmer(sp~time+(1|id),data=sp)
-    print( "Random intercepts only is best")
-  } else {
-    fit = lmer( sp~time + (1+time|id), data = sp)
-    print( "Random intercepts and slopes is best")
-  }
+if( ! file.exists( file.path ( PROJHOME , "Figures" , "Groupspeed.pdf"))){
   
-}
-
-```
-
-```{R, echo = F}
-
-
-plot(sp$sp~sp$time, 
-     xlab = "Time (min)", 
-     ylab = "Ground speed (m/s)",
-     # type = "n" ,
-     # ylim = c(10,20)
-)
-abline( fit$coefficients[1],fit$coefficients[2], lwd = 2)
-
-```
-
-
-
-### 4. Flap frequency for solo flight (after split)
-
-```{R, echo = F}
-
-# options
-
-scale = F
-
-```
-
-
-#### autocorrelation 
-
-```{R, echo = F}
-acf( na.omit(as.vector(ff.uncoh)), lag.max =  200, ylim = c(0,0.4))
-```
-
-60 looks good here. 
-
-#### Build dataframe 
-
-```{R, echo = F} 
-
-# length per bird
-
-len.pb = rep(NA,6)
-for ( i in 1:6){
-len.pb[i] = length(na.omit(ff.uncoh[,i]))
-}
-sam.len = floor(min(len.pb/60))
-
-print(sam.len)
-
-```
-
-only 49 flaps for each bird. Cannot be biased toward the ones which had more recorded seconds (i.e the ones whose loggers did not run out of their recording window)
-
-```{R, echo = F}
-sam = matrix(NA,sam.len,6)
-
-for ( i in 1:6) {
-  sam[,i] = sample( 1:len.pb[i], sam.len)
-}
-
-ind.max = apply( sam,2,max)
-min.ind.max = min(ind.max)
-```
-
-```{R, echo = F}
-ff.temp = matrix(NA, sam.len,6)
-
-for ( i in 1:6){
-  ff.temp[,i] = ff.uncoh[sam[,i],i]
-}
-
-if ( !scale ){
-  ff = data.frame( ff = as.vector(ff.temp),
-                   id = rep(1:6, each = sam.len),
-                   time = as.vector(sam)/60)
-} else {
-  ff = data.frame( ff = scale(as.vector(ff.temp)),
-                   id = rep(1:6, each = sam.len),
-                   time = scale(as.vector(sam)/60))
-}
-head(ff)
-```
-
-#### Fit fixed effects
-
-```{R, echo = F}
-
-
-# fit glmer
-
-fit1 <- lmer(ff ~ time + (1+time| id), data = ff)
-fit2 <- lmer(ff ~ time + (1|id), data = ff)
-
-if ( min( c(AIC(fit1), AIC(fit2))) == AIC(fit1)){
-  print ("Include random slopes")
-  fit = fit1
-} else {
-  print ( "Do not include random slopes")
-  fit = fit2
-}
-c(AIC(fit1), AIC(fit2))
-sjp.lmer(fit, type =  "fe")
-```
-
-
-#### plot 
-
-```{R, echo = F}
-
-m2 =lmer( data = ff, ff ~ time + (1|id) ) 
-
-a = fixef(m2)
-b = ranef(m2, condVar = T)
-
-#make final plot
-{plot(ff$ff ~ ff$time, col = as.numeric(ff$id)+1, las = 1, 
-  #    ylim = c(6.6,7.3), 
-
-      xlab = "Time (min)", 
-     ylab = "Flap frequency (Hz)",
- # type = "n"
+  pdf( file.path (PROJHOME , "Figures", "Groupspeed.pdf"))
+  plot(sp$sp~sp$time, 
+       xlab = "Time (min)", 
+       ylab = "Ground speed (m/s)"
+       # type = "n" ,
+       # ylim = c(10,20)
   )
-#and plot each random slope
-
-#for ( i in 1:6){
-  
-#  abline(a = as.numeric(b[[1]][i,1])+ as.numeric(a[1]), b= a[2], col = cols[i], lwd=2 )
-  
-#}
-#and general response
-#abline(a, lwd = 4)
+  abline( fit$coefficients[1],fit$coefficients[2], lwd = 2)
+  dev.off()
 }
 ```
 
-### 5. Frontback/leftright dist to the centroid
+
+
+### 5. Dist to the centroid
 
 
 ```{R}
@@ -549,149 +444,95 @@ dist2cent= dist2cent[1:len,]
 
 obj = fb_lr_d2c(GPS.coh,centroid,dist2cent)
 
-frontback.res.cent = obj[[1]]
-leftright.res.cent = obj[[2]]
-
-```
-
-```{R}
-
-plot(rowMeans(abs(frontback.res.cent)))
-plot(rowMeans(leftright.res.cent))
+fb.coh = abs(obj[[1]])
+lr.coh = abs(obj[[2]])
 
 ```
 
 
-```{R, echo = F}
-
-# Options
-
-scale = F
-
-```
+####a. Front/back
 
 #### Autocorrelation 
 
 
 ```{R, echo = F}
-par(mfrow = c(2,1))
+
 acf(na.omit(as.vector(abs(frontback.res.cent) )), lag.max = 1000)
-acf(na.omit(as.vector(abs(leftright.res.cent) )), lag.max = 1000)
+
 ```
 
-600 and 200 
+600
+
+# Which model is best? 
 
 ```{R}
 
-mod.lr = model( abs(leftright.res.cent), 200, F)
-mod.fb = model( abs(frontback.res.cent), 600, F)
-```
-
-```{R}
-
-mod.plot = mod.fb
-
-sam= mod.plot[[2]]
-fit= mod.plot[[3]]
+AICs = matrix(NA,100,3)
 
 
-#make final plot
-plot(sam[,1]~sam[,2], col = cols, las = 1,
-     ylim = c(0,25), 
-     xlab = "Time (min)", 
-     type = "n",
-     ylab = "Cranio-caudal distance to centroid (m)")
-#and plot each random slope
-
-#model
-
-a = fixef(fit)
-b = ranef(fit, condVar = T)
-mean_=(b[[1]][2]+a[2])
-
-for ( i in 1:6){
-  
-  abline(a = as.numeric(b[[1]][i,1])+ as.numeric(a[1]), b= mean_$time[i], col = cols[i], lwd=2 )
-  
+for ( i in 1:100){
+  mod= try( model2(fb.coh,600,scale = T))
+  AICs[i,] = mod[[3]]
 }
-#and general response
-abline(a, lwd = 4)
-
-##### pdf 
-pdf ( file.path ( PROJHOME, "Figures" , "craniocaudal.pdf"))
-plot(sam[,1]~sam[,2], col = cols, las = 1,
-     ylim = c(0,25), 
-     xlab = "Time (min)", 
-     type = "n",
-     ylab = "Cranio-caudal distance to centroid (m)")
-a = fixef(fit)
-b = ranef(fit, condVar = T)
-mean_=(b[[1]][2]+a[2])
-for ( i in 1:6){
-    abline(a = as.numeric(b[[1]][i,1])+ as.numeric(a[1]), b= mean_$time[i], col = cols[i], lwd=2 )
-  }
-abline(a, lwd = 4)
-dev.off()
 
 ```
 
 ```{R}
 
-
-
-mod.plot = mod.lr
-
-sam= mod.plot[[2]]
-fit= mod.plot[[3]]
-
-
-#make final plot
-plot(sam[,1]~sam[,2], col = cols, las = 1,
-     ylim = c(0,25), 
-     xlab = "Time (min)", 
-     type = "n",
-     ylab = "Ventral distance to centroid (m)")
-#and plot each random slope
-
-#model
-
-a = fixef(fit)
-b = ranef(fit, condVar = T)
-mean_=(b[[1]][2]+a[2])
-
-for ( i in 1:6){
-  
-  abline(a = as.numeric(b[[1]][i,1])+ as.numeric(a[1]), b= mean_$time[i], col = cols[i], lwd=2 )
-  
-}
-#and general response
-abline(a, lwd = 4)
-
-
-####### pdf 
-pdf( file.path (PROJHOME , "Figures" , "ventral.pdf"))
-plot(sam[,1]~sam[,2], col = cols, las = 1,
-     ylim = c(0,25), 
-     xlab = "Time (min)", 
-     type = "n",
-     ylab = "Ventral distance to centroid (m)")
-a = fixef(fit)
-b = ranef(fit, condVar = T)
-mean_=(b[[1]][2]+a[2])
-for ( i in 1:6){
-  abline(a = as.numeric(b[[1]][i,1])+ as.numeric(a[1]), b= mean_$time[i], col = cols[i], lwd=2 )
-}
-abline(a, lwd = 4)
-dev.off()
-#########
+whi.mi = which.min(colMeans(AICs))
+print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
 ```
 
 ```{R}
 
-mod.lr[[1]]
-mod.fb[[1]]
+CIs = matrix( NA, 100, 2)
+for ( i in 1:100){
+  mod = model2(fb.coh, 600, scale = T, specify.model = whi.mi)
+  CIs[i,] = mod[[2]]
+}
+
+colMeans(CIs)
+```
 
 
+
+####b. left/right 
+
+```{R}
+acf(na.omit(as.vector(lr.coh )), lag.max = 1000)
+
+```
+200
+
+# Which model is best? 
+
+```{R}
+
+AICs = matrix(NA,100,3)
+
+
+for ( i in 1:100){
+  mod= try( model2(lr.coh,200,scale = T))
+  AICs[i,] = mod[[3]]
+}
+
+```
+
+```{R}
+
+whi.mi = which.min(colMeans(AICs))
+print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
+```
+
+```{R}
+
+CIs = matrix( NA, 100, 2)
+for ( i in 1:100){
+  mod = model2(lr.coh, 200, scale = T, specify.model = whi.mi)
+  CIs[i,] = mod[[2]]
+}
+
+colMeans(CIs)
 ```
 
 
@@ -702,46 +543,7 @@ r.squaredGLMM( mod.fb[[3]])
 ```
 
 
-```{R}
-floor(floor(dim(nn.coh)[1]/5/60)/3)
 
-mins = 5
-step.len = 5*5*60
-len = floor(97/mins)
-step = rep(step.len, len)
-cum.step = c(1,cumsum(step)+1)
-
-mean = rep(NA,len)
-sd   = rep(NA,len)
-for ( i in 1:len){
-mean[i] = mean(nn.coh[cum.step[i]:cum.step[i+1],])
-sd  [i] = sd  (nn.coh[cum.step[i]:cum.step[i+1],])
-}
-
-mean
-```
-
-```{R}
-
-pdf( file.path (PROJHOME, "Figures" , "pidge.schem.pdf"))
-mean2 = mean/2
-mean2 = mean/2
-
-par( mar = c(5,5,5,5))
-plot(-15:15,seq(-4,4,length.out = 31) ,type = "n", bty = "n", yaxt = "n", xaxt = "n", ylab = "", xlab = "")
-axis( 2, at= c(-4,-2,0,2), labels = c(0,2,4,6))
-mtext ( "Distance (m)", 2 , line = 3)
-segments( -9,0-mean2[1],-9,0+mean2[1])
-#points(-9,0)
-#segments( -9-sd[1],0 ,-9+sd[1],0)
-
-segments( 9,0-mean2[len],9,0+mean2[len])
-#points(9,0)
-#segments( 9-sd[len],0 ,9+sd[len],0)
-
-dev.off()
-
-```
 
 ###6. Dorsal body amplitude
 
@@ -754,44 +556,48 @@ acf( na.omit(as.vector(dba.coh)), lag.max = 1000)
 ```
 
 100 seems fine
+
+# Which model is best? 
+
 ```{R}
 
-model2( dba.coh , 100, F)
+AICs = matrix(NA,100,3)
 
-```
-```{R}
 
-for ( i in seq(100,500,100)){
-  time= Sys.time()
-model ( ff.coh[1:i,])
-print( Sys.time() - time)
+for ( i in 1:100){
+  mod= try( model2(dba.coh,100,scale = T))
+  AICs[i,] = mod[[3]]
 }
-```
-
-```{R}
-
-mod.200 = model ( nn.coh, subsample = 200)
-mod.300 = model ( nn.coh, subsample = 300) 
-
 
 ```
 
 ```{R}
 
-
-cbind(mod.200[[3]],
-      mod.300[[3]])
-
-
+whi.mi = which.min(colMeans(AICs))
+print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
 ```
-
 
 ```{R}
 
-mod = try(model2(ff.coh, 100))
+CIs = matrix( NA, 100, 2)
+for ( i in 1:100){
+  mod = model2( dba.coh, 100, scale = T, specify.model = whi.mi)
+  CIs[i,] = mod[[2]]
+}
 
-mod[[2]]
-summary(mod[[1]])
-
-confint(mod[[1]])
+colMeans(CIs)
 ```
+
+```{R}
+
+if ( !file.exists( file.path(PROJHOME , "Figures", "dba.pdf"))){
+  pdf( file.path(PROJHOME , "Figures", "dba.pdf"))
+  bm_plotDS(matr = dba.coh , return_means = F, total.bins = 98, error = "SD", ylim= c(9,20),ylab = "Dorsal body amplitude (mm)", xlab = "Time (min)")
+  dev.off()
+} else {
+  pdf( file.path(PROJHOME , "Figures", "dba.pdf"))
+  bm_plotDS(matr = dba.coh , return_means = F, total.bins = 98, error = "SD", ylim= c(9,20),ylab = "Dorsal body amplitude (mm)", xlab = "Time (min)")
+}
+
+```
+

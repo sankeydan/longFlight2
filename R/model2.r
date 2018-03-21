@@ -5,15 +5,17 @@ model2 = function ( dat, acf.const, scale = F, plot = F, conf.method = "std.er",
   # dat = ff.coh
   # acf.const = 100
   # scale = F
-
+  
   # libraries
 
   library(lme4)
   library(mgcv)
+  library(MASS)
 
   # Defensive coding
 
   if( length( dim(dat)) != 2) stop ( "dat must be matrix, variable vs individual")
+
 
   # data manipulation
 
@@ -48,7 +50,7 @@ model2 = function ( dat, acf.const, scale = F, plot = F, conf.method = "std.er",
     whi.mi = which.min(AICs)
     whi.mi
     fit = get( paste0("m",whi.mi))
-    print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
+   # print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
   } else {
     fit = get( paste0( "m", specify.model))
   }
