@@ -25,6 +25,9 @@ rm(list=ls())
 # objects 
 
 
+n.iter = 100 # n (number) of iter (iterations). Used 1000, in the paper but 100 is good to see how it works 
+
+
 
 # libraries 
 
@@ -123,7 +126,7 @@ Seems to drop around 300 (to be safe, 400)
 AICs = matrix(NA,100,3)
 
 
-for ( i in 1:100){
+for ( i in 1:n.iter){
   mod= try( model2(nn.coh,400,scale = T))
   AICs[i,] = mod[[3]]
 }
@@ -139,7 +142,7 @@ print( c("simple linear model is best", "random intercepts only","random interce
 ```{R}
 
 CIs = matrix( NA, 100, 2)
-for ( i in 1:100){
+for ( i in 1:n.iter){
   mod = model2( nn.coh, 400, scale = T, specify.model = whi.mi)
   CIs[i,] = mod[[2]]
 }
@@ -147,24 +150,7 @@ for ( i in 1:100){
 colMeans(CIs)
 ```
 
-```{R}
 
-CIs.method2 = matrix( NA, 100, 2)
-for ( i in 1:100){
-  mod = model2( nn.coh, 400, scale = T, specify.model = whi.mi, conf.method = "confint")
-  CIs.method2[i,] = mod[[2]]
-}
-
-colMeans(CIs.method2)
-
-```
-
-```{R}
-
-t.test( CIs[,1],CIs.method2[,1])
-t.test( CIs[,2],CIs.method2[,2])
-
-```
 
 #### Build dataframe 
 
@@ -252,7 +238,7 @@ acf( as.vector(ff.coh), lag.max =  200, ylim = c(0,0.4))
 AICs = matrix(NA,100,3)
 
 
-for ( i in 1:100){
+for ( i in 1:n.iter){
   mod= try( model2(ff.coh,50,scale = T))
   AICs[i,] = mod[[3]]
 }
@@ -268,7 +254,7 @@ print( c("simple linear model is best", "random intercepts only","random interce
 ```{R}
 
 CIs = matrix( NA, 100, 2)
-for ( i in 1:100){
+for ( i in 1:n.iter){
   mod = model2( ff.coh, 50, scale = T, specify.model = whi.mi)
   CIs[i,] = mod[[2]]
 }
@@ -276,24 +262,6 @@ for ( i in 1:100){
 colMeans(CIs)
 ```
 
-```{R}
-
-CIs.method2 = matrix( NA, 100, 2)
-for ( i in 1:100){
-  mod = model2( ff.coh, 50, scale = T, specify.model = whi.mi, conf.method = "confint")
-  CIs.method2[i,] = mod[[2]]
-}
-
-colMeans(CIs.method2)
-
-```
-
-```{R}
-
-t.test( CIs[,1],CIs.method2[,1])
-t.test( CIs[,2],CIs.method2[,2])
-
-```
 
 #### Build dataframe (part 2)
 
@@ -369,7 +337,7 @@ sp.coh = GPS.coh[, "speed",]
 AICs = matrix(NA,100,3)
 
 
-for ( i in 1:100){
+for ( i in 1:n.iter){
   mod= try( model2(sp.coh,250,scale = T))
   AICs[i,] = mod[[3]]
 }
@@ -385,7 +353,7 @@ print( c("simple linear model is best", "random intercepts only","random interce
 ```{R}
 
 CIs = matrix( NA, 100, 2)
-for ( i in 1:100){
+for ( i in 1:n.iter){
   mod = model2( sp.coh, 250, scale = T, specify.model = whi.mi)
   CIs[i,] = mod[[2]]
 }
@@ -470,7 +438,7 @@ acf(na.omit(as.vector(abs(frontback.res.cent) )), lag.max = 1000)
 AICs = matrix(NA,100,3)
 
 
-for ( i in 1:100){
+for ( i in 1:n.iter){
   mod= try( model2(fb.coh,600,scale = T))
   AICs[i,] = mod[[3]]
 }
@@ -486,7 +454,7 @@ print( c("simple linear model is best", "random intercepts only","random interce
 ```{R}
 
 CIs = matrix( NA, 100, 2)
-for ( i in 1:100){
+for ( i in 1:n.iter){
   mod = model2(fb.coh, 600, scale = T, specify.model = whi.mi)
   CIs[i,] = mod[[2]]
 }
@@ -511,7 +479,7 @@ acf(na.omit(as.vector(lr.coh )), lag.max = 1000)
 AICs = matrix(NA,100,3)
 
 
-for ( i in 1:100){
+for ( i in 1:n.iter){
   mod= try( model2(lr.coh,200,scale = T))
   AICs[i,] = mod[[3]]
 }
@@ -527,7 +495,7 @@ print( c("simple linear model is best", "random intercepts only","random interce
 ```{R}
 
 CIs = matrix( NA, 100, 2)
-for ( i in 1:100){
+for ( i in 1:n.iter){
   mod = model2(lr.coh, 200, scale = T, specify.model = whi.mi)
   CIs[i,] = mod[[2]]
 }
@@ -564,7 +532,7 @@ acf( na.omit(as.vector(dba.coh)), lag.max = 1000)
 AICs = matrix(NA,100,3)
 
 
-for ( i in 1:100){
+for ( i in 1:n.iter){
   mod= try( model2(dba.coh,100,scale = T))
   AICs[i,] = mod[[3]]
 }
@@ -580,7 +548,7 @@ print( c("simple linear model is best", "random intercepts only","random interce
 ```{R}
 
 CIs = matrix( NA, 100, 2)
-for ( i in 1:100){
+for ( i in 1:n.iter){
   mod = model2( dba.coh, 100, scale = T, specify.model = whi.mi)
   CIs[i,] = mod[[2]]
 }
