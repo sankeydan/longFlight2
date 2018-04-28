@@ -182,7 +182,8 @@ b = ranef(m2, condVar = T)
 # Extract the variances of the random effects
 qq <- attr(b[[1]], "postVar")
 e=(sqrt(qq)) 
-e=e[2,2,] #here we want to access the Petal.Weigth, which is stored in column 2 in b[[1]], that's why I use the [,2,2]
+e=e[2,2,] 
+
 #calculate CI's
 liminf=(b[[1]][2]+a[2])-(e*2)
 mean_=(b[[1]][2]+a[2])
@@ -190,6 +191,8 @@ limsup=(b[[1]][2]+a[2])+(e*2)
 #Plot betas and its errors
 
 ```
+
+ignore NAs 
 
 ```{R}
 
@@ -229,7 +232,7 @@ dev.off()
 acf( as.vector(ff.coh), lag.max =  200, ylim = c(0,0.4))
 ```
 
-50 seems a conservative estimate 
+100 seems a conservative estimate 
 
 # Which model is best? 
 
@@ -239,7 +242,7 @@ AICs = matrix(NA,100,3)
 
 
 for ( i in 1:n.iter){
-  mod= try( model2(ff.coh,50,scale = T))
+  mod= try( model2(ff.coh,100,scale = T))
   AICs[i,] = mod[[3]]
 }
 
@@ -293,13 +296,10 @@ b = ranef(fit, condVar = T)
 {plot(ff$ff ~ ff$time, col = as.numeric(ff$id)+1, las = 1, ylim = c(6.6,7.3), xlab = "Time (min)", 
       ylab = "Flap frequency (Hz)", type = "n")
   #and plot each random slope
-  for ( i in 1:6){
-    abline(a = as.numeric(b[[1]][i,1])+ as.numeric(a[1]), b= a[2], col = cols[i], lwd=2 )
-  }
-}
+
 #and general response
 abline(a, lwd = 4)
-
+}
 ```
 
 ```{R}
