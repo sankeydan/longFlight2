@@ -6,15 +6,14 @@ output: html_notebook
 
 
 ####1. Nearest neighbour
-#####a. Group level root function
-#####b. individual level models
 ####2. Flap frequency
 ####3. Group speed 
-####4. Flap frequency for solo flight (after split)
-####5. Dist to the centroid
+####4. Dist to the centroid
 #####a. Frontback
 #####b. Leftright
-####6. Dorsal body amplitude
+####5. Dorsal body amplitude
+####6. Flap frequency - following split 
+####7. Descriptives 
 
 ```{R, echo = F}
 
@@ -24,10 +23,7 @@ rm(list=ls())
 
 # objects 
 
-
-n.iter = 100 # n (number) of iter (iterations). Used 1000, in the paper but 100 is good to see how it works 
-
-
+n.iter = 100
 
 # libraries 
 
@@ -45,6 +41,10 @@ load( file.path( PROJHOME , "Output" , "GPS-coh.rda"))
 load( file.path( PROJHOME , "Output" , "ff-coh.rda"))
 load( file.path( PROJHOME , "Output" , "dba-coh.rda"))
 load( file.path( PROJHOME , "Output" , "nn-coh.rda")) 
+load( file.path( PROJHOME , "Output" , "ff-uncoh.rda"))
+
+
+
 
 coh = dim(nn.coh)[1] # time of split
 len = ncol(nn.coh)+1 # number of individuals plus a group level measure. 
@@ -52,351 +52,479 @@ cols = c(rainbow(6),"black")
 time = c(1:coh)/60/5
 
 
+
 ```
+
+
 
 ### 1. nearest neighbour 
 
-#### a) Group level root function
 
+####1. Autocorrelation 
 
 ```{R}
 
-# group mean distance
-y = (rowMeans(nn.coh))
+acf = acf(as.vector(nn.coh), lag.max = 1000)
 
-# root transforms to try
-roots = seq(1,1.4,0.1)
-
-# object for r squared 
-r.sq = rep(NA,length(roots))
-
-# loop to compare root transforms 
-
-for (  i in 1:length(roots)){
-  
-  x = c(1:length(y))/5/60
-  mod2 = lm(y^(1/roots[i])~x)
-  
-  r.sq[i] = (summary(mod2)$r.squared)
-  plot(y~x)
-  
-  y2 = mod2$coefficients[1] + mod2$coefficients[2]*  x
-  lines(y2^roots[i]~x,col = "red")
+if(! file.exists(file.path (PROJHOME , "Results" , "acf-nn.rda"))){
+  acf.const = 400
+  acf.nn = list( acf, acf.const)
+  save( acf.nn , file = file.path ( PROJHOME, "Results", "acf-nn.rda") )
+} else {
+  load( file.path (PROJHOME , "Results", "acf-nn.rda"))
 }
-```
-
-```{R}
-roots[which.max(r.sq)]
-
-```
-
-```{R}
-mod2 = lm( lm(y^(1/ roots[which.max(r.sq)])~x) )
-
-summary(mod2)
-```
-
-#### Plot 
-
-```{R}
-
-pdf( file.path(PROJHOME , "Figures" , "Group_dist2neighbour.pdf"))
-y = bm_plotDS(matr = nn.coh, error = "SD", ylim = c(0,10), x = c(1,97), xlab = "Time (min)", ylab = "Distance to nearest neighbour (m)")
-dev.off()
-bm_plotDS(matr = nn.coh, error = "SD", ylim = c(0,10), x = c(1,97), xlab = "Time (min)", ylab = "Distance to nearest neighbour (m)")
-```
-
-#### b) Individual level models 
-
-#### Autocorrelation 
-
-```{R}
-
-acf(as.vector(nn.coh), lag.max = 1000)
-
 ```
 
 
 Seems to drop around 300 (to be safe, 400)
 
-# Which model is best? 
+####1. Which model is best? 
 
 ```{R}
 
-AICs = matrix(NA,100,3)
-
-
-for ( i in 1:n.iter){
-  mod= try( model2(nn.coh,400,scale = T))
-  AICs[i,] = mod[[3]]
+if ( ! file.exists(file.path(PROJHOME , "Results" , "nn-AICs.rda"))){
+  AICs = matrix(NA,n.iter,3)
+  
+  for ( i in 1:n.iter){
+    mod= try( model2(nn.coh,acf.nn[[2]],scale = T))
+    AICs[i,] = mod[[3]]
+  }
+  save( AICs , file = file.path(PROJHOME , "Results", "nn-AICs.rda"))
+} else {
+  load( file.path (PROJHOME , "Results" , "nn-AICs.rda"))
 }
-
-```
-
-```{R}
 
 whi.mi = which.min(colMeans(AICs))
 print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
 ```
 
+####1. Statistics (scaled)
+
 ```{R}
 
-CIs = matrix( NA, 100, 2)
-for ( i in 1:n.iter){
-  mod = model2( nn.coh, 400, scale = T, specify.model = whi.mi)
-  CIs[i,] = mod[[2]]
+if( !file.exists( file.path( PROJHOME , "Results", "stats-nn-sca.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+  r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( nn.coh, acf.nn[[2]], scale = T, specify.model = whi.mi)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+    t[i] = mod[[7]]
+    if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+  }
+  
+  stats.nn.sca = list( CIs, fixed.ef, rand.ef, t,r2,AIC)
+  save( stats.nn.sca, file = file.path (PROJHOME , "Results" , "stats-nn-sca.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-nn-sca.rda"))
 }
 
-colMeans(CIs)
-```
-
-
-
-#### Build dataframe 
-
-
-```{R, echo = F}
-
-# Sample length (sam.len)
-
-sam.len = nrow ( nn.coh)/400
-sam = sample( 1:nrow(nn.coh), sam.len)
-nn = data.frame ( nn = as.vector(nn.coh[sam,]), 
-                  id = as.factor(rep (1: ncol(nn.coh), each = sam.len)),
-                  time = rep(time[sam], ncol(nn.coh)))
-
-#head(nn)
-```
-
-#### plot
-
-```{R, echo = F}
-
-# fit glmer
-
-m2 =lmer( data = nn, nn ~ time + (1+ time|id)  ) 
-
-a = fixef(m2)
-b = ranef(m2, condVar = T)
-
-# Extract the variances of the random effects
-qq <- attr(b[[1]], "postVar")
-e=(sqrt(qq)) 
-e=e[2,2,] 
-
-#calculate CI's
-liminf=(b[[1]][2]+a[2])-(e*2)
-mean_=(b[[1]][2]+a[2])
-limsup=(b[[1]][2]+a[2])+(e*2)
-#Plot betas and its errors
+colMeans(stats.nn.sca[[1]])
 
 ```
 
-ignore NAs 
+####1. Statistics (unscaled)
 
 ```{R}
 
+if( file.exists( file.path( PROJHOME , "Results", "stats-nn-plot.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( nn.coh, acf.nn[[2]], scale = F, specify.model = whi.mi)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+    t[i] = mod[[7]]
+   if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+  }
+  
+  stats.nn.plot = list( CIs, fixed.ef, rand.ef, t,r2,AIC)
+  save( stats.nn.plot, file = file.path (PROJHOME , "Results" , "stats-nn-plot.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-nn-plot.rda"))
+}
 
+colMeans(stats.nn.plot[[1]])
+```
+
+
+####1. plot
+
+```{R, echo = F}
+
+
+fixed.ef = colMeans( stats.nn.plot[[2]])
+rand.ef = rep( NA, 6)
+arr = stats.nn.plot[[3]]
+for ( i in 1:6){
+  rand.ef[i] = mean(arr[i,2,])
+}
+mean_=(rand.ef+fixed.ef[2])
+time = (c(1:nrow(nn.coh))/5/60)
 #make final plot
-plot(nn$nn ~ nn$time, col = cols, las = 1, ylim = c(0,6), xlab = "Time (min)", 
+plot(rowMeans(nn.coh)~ time , col = cols, las = 1, ylim = c(0,6), xlab = "Time (min)", 
      type = "n",
      ylab = "Nearest neighbour distance (m)")
 #and plot each random slope
-
 for ( i in 1:6){
-  
-  abline(a = as.numeric(b[[1]][i,1])+ as.numeric(a[1]), b= mean_$time[i], col = cols[i], lwd=2 )
-  
+  abline(a = as.numeric(rand.ef[i])+ as.numeric(fixed.ef[1]), b= mean_[i], col = cols[i], lwd=2 )
 }
 #and general response
-abline(a, lwd = 4)
+abline(fixed.ef, lwd = 4)
 
-pdf( file.path ( PROJHOME , "Figures" , "nn.mixed.plot.pdf"))
-plot(nn$nn ~ nn$time, col = cols, las = 1, ylim = c(0,6), xlab = "Time (min)", 
-     type = "n",
-     ylab = "Nearest neighbour distance (m)")
-for ( i in 1:6){
-  abline(a = as.numeric(b[[1]][i,1])+ as.numeric(a[1]), b= mean_$time[i], col = cols[i], lwd=2 )
+if(! file.exists(file.path(PROJHOME , "Figures", "nn.mixed.plot.pdf"))){
+  pdf( file.path ( PROJHOME , "Figures" , "nn.mixed.plot.pdf"))
+  time = (c(1:nrow(nn.coh))/5/60)
+  #make final plot
+  plot(rowMeans(nn.coh)~ time , col = cols, las = 1, ylim = c(0,6), xlab = "Time (min)", 
+       type = "n",
+       ylab = "Nearest neighbour distance (m)")
+  #and plot each random slope
+  for ( i in 1:6){
+    abline(a = as.numeric(rand.ef[i])+ as.numeric(fixed.ef[1]), b= mean_[i], col = cols[i], lwd=2 )
+  }
+      #and general response
+abline(fixed.ef, lwd = 4)
+  dev.off()
 }
-abline(a, lwd = 4)
-dev.off()
-```
+``` 
 
 
 ###2. Flap frequency 
 
 
-#### autocorrelation 
-
-```{R, echo = F}
-acf( as.vector(ff.coh), lag.max =  200, ylim = c(0,0.4))
-```
-
-100 seems a conservative estimate 
-
-# Which model is best? 
+####2. Autocorrelation 
 
 ```{R}
 
-AICs = matrix(NA,100,3)
+acf = acf(as.vector(ff.coh), lag.max = 1000)
 
-
-for ( i in 1:n.iter){
-  mod= try( model2(ff.coh,100,scale = T))
-  AICs[i,] = mod[[3]]
+if( !file.exists(file.path (PROJHOME , "Results" , "acf-ff.rda"))){
+  acf.const = 100
+  acf.ff = list( acf, acf.const)
+  save( acf.ff , file = file.path ( PROJHOME, "Results", "acf-ff.rda") )
+} else {
+  load( file.path (PROJHOME , "Results", "acf-ff.rda"))
 }
-
 ```
 
+cho0se 100
+
+####2. Which model is best? 
+
 ```{R}
+
+if ( ! file.exists(file.path(PROJHOME , "Results" , "ff-AICs.rda"))){
+  AICs = matrix(NA,n.iter,3)
+  
+  for ( i in 1:n.iter){
+    mod= try( model2(ff.coh,acf.ff[[2]],scale = T))
+    AICs[i,] = mod[[3]]
+  }
+  save( AICs , file = file.path(PROJHOME , "Results", "ff-AICs.rda"))
+} else {
+  load( file.path (PROJHOME , "Results" , "ff-AICs.rda"))
+}
 
 whi.mi = which.min(colMeans(AICs))
 print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
 ```
 
+####2. Statistics (scaled)
+
 ```{R}
 
-CIs = matrix( NA, 100, 2)
-for ( i in 1:n.iter){
-  mod = model2( ff.coh, 50, scale = T, specify.model = whi.mi)
-  CIs[i,] = mod[[2]]
+if( !file.exists( file.path( PROJHOME , "Results", "stats-ff-sca.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+    p = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( ff.coh, acf.ff[[2]], scale = T, specify.model = whi.mi)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+    if( !is.null(mod[[5]])){
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+    }
+    t[i] = mod[[7]]
+   if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+      p[i] = mod[[8]]
+  }
+  
+  stats.ff.sca = list( CIs, fixed.ef, rand.ef, t,r2,AIC,p)
+  save( stats.ff.sca, file = file.path (PROJHOME , "Results" , "stats-ff-sca.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-ff-sca.rda"))
 }
 
-colMeans(CIs)
+colMeans(stats.ff.sca[[1]])
+
+median(p)
+```
+
+####2. Statistics (unscaled)
+
+```{R}
+
+if(! file.exists( file.path( PROJHOME , "Results", "stats-ff-plot.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  p = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( ff.coh, acf.ff[[2]], scale = F, specify.model = whi.mi)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+     if( !is.null(mod[[5]])){
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+     }
+    t[i] = mod[[7]]
+   if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+    p[i] = mod[[8]]
+  }
+  
+  stats.ff.plot = list( CIs, fixed.ef, rand.ef, t,r2,AIC,p)
+  save( stats.ff.plot, file = file.path (PROJHOME , "Results" , "stats-ff-plot.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-ff-plot.rda"))
+}
+
+colMeans(stats.ff.plot[[1]])
+median(p)
 ```
 
 
-#### Build dataframe (part 2)
-
-```{R, echo = F} 
-
-# Sample length (sam.len)
-
-ind.len = nrow ( ff.coh)
-sam.len = ind.len/50
-sam = sample( 1:ind.len, sam.len)
-
-ff = data.frame( ff = as.vector(ff.coh[sam,]),
-                 id = rep(1:6, each = length(sam)),
-                 time = rep(sam,6)/60)
-
-```
-
-
-#### Plot
+####2. plot
 
 ```{R, echo = F}
 
-fit <- lmer(ff ~ time + (1|id), data = ff)
 
-a = fixef(fit)
-b = ranef(fit, condVar = T)
-
+fixed.ef = colMeans( stats.ff.plot[[2]])
+#rand.ef = rep( NA, 6)
+#arr = stats.ff.plot[[3]]
+#for ( i in 1:6){
+#  rand.ef[i] = mean(arr[i,2,])
+#}
+#mean_=
+#  (
+    #rand.ef+
+    # fixed.ef[2])
+time = (c(1:nrow(ff.coh))/60)
 #make final plot
-{plot(ff$ff ~ ff$time, col = as.numeric(ff$id)+1, las = 1, ylim = c(6.6,7.3), xlab = "Time (min)", 
-      ylab = "Flap frequency (Hz)", type = "n")
-  #and plot each random slope
-
+plot(rowMeans(ff.coh)~ time , col = cols, las = 1, ylim = c(6.5,7.3), xlab = "Time (min)", 
+     type = "n",
+     ylab = "Flap frequency (Hz)")
+#and plot each random slope
+#for ( i in 1:6){
+#  abline(a = as.numeric(rand.ef[i]) + #as.numeric(fixed.ef[1]), b= fixed.ef[2], col = cols[i], #lwd=2 )
+#}
 #and general response
-abline(a, lwd = 4)
-}
-```
+abline(fixed.ef[1],fixed.ef[2]/5 , lwd = 4)
 
-```{R}
-if( ! file.exists( file.path(PROJHOME , "Figures" , "ff.pdf"))){
-  pdf( file.path ( PROJHOME , "Figures", "ff.pdf"))
-  {plot(ff$ff ~ ff$time, col = as.numeric(ff$id)+1, las = 1, ylim = c(6.6,7.3), xlab = "Time (min)", 
-      ylab = "Flap frequency (Hz)", type = "n")
-  for ( i in 1:6){
-    abline(a = as.numeric(b[[1]][i,1])+ as.numeric(a[1]), b= a[2], col = cols[i], lwd=2 )
+if(!file.exists(file.path(PROJHOME , "Figures", "ff.mixed.plot.pdf"))){
+  {  pdf( file.path ( PROJHOME , "Figures" , "ff.mixed.plot.pdf"))
+   
+    #make final plot
+    {plot(rowMeans(ff.coh)~ time , col = cols, las = 1, ylim = c(6.5,7.3), xlab = "Time (min)", 
+         type = "n",
+         ylab = "Flap frequency (Hz)")
+    #and plot each random slope
+#    for ( i in 1:6){
+#      abline(a = as.numeric(rand.ef[i])+ #as.numeric(fixed.ef[1]), b= fixed.ef[2], col = cols[i], #lwd=2 )
+#    }
+  }
+    #and general response
+abline(fixed.ef[1], fixed.ef[2]/5, lwd = 4)
+    dev.off()
   }
 }
-abline(a, lwd = 4)
-dev.off()
-}
+
+``` 
+
+#### drop in ff
+```{R}
+
+
+fixed.ef[1]-
+fixed.ef[1] + fixed.ef[2]/5*98
 ```
+
 
 ###3. Group speed 
 
 
-#### Autocorrelation
+####3. Autocorrelation
 
 ```{R, echo = F}
-acf( as.vector(GPS.coh[, "speed",] ), lag.max = 400)
+acf = acf( as.vector(GPS.coh[, "speed",] ), lag.max = 1000)
 
 ```
 
-250 seems fine here 
+600 seems fine here 
 
-# Which model is best? 
+```{R}
+
+if(! file.exists(file.path (PROJHOME , "Results" , "acf-sp.rda"))){
+  acf.sp = list( acf, 600)
+  save( acf.sp , file = file.path ( PROJHOME, "Results", "acf-sp.rda") )
+} else {
+  load( file.path (PROJHOME , "Results", "acf-sp.rda"))
+}
+
+```
+
+
+
+####3. Which model is best? 
 
 ```{R}
 
 sp.coh = GPS.coh[, "speed",]
 
-AICs = matrix(NA,100,3)
-
-
-for ( i in 1:n.iter){
-  mod= try( model2(sp.coh,250,scale = T))
-  AICs[i,] = mod[[3]]
+if( ! file.exists( file.path( PROJHOME , "Results" , "sp-AICs.rda"))){
+  AICs = matrix(NA,n.iter,3)
+  
+  
+  for ( i in 1:n.iter){
+    mod= try( model2(sp.coh,acf.sp[[2]],scale = T))
+    AICs[i,] = mod[[3]]
+  }
+  
+  sp.AICs = AICs
+  save(sp.AICs , file = file.path( PROJHOME , "Results" , "sp-AICs.rda"))
+} else { 
+  load( file.path( PROJHOME , "Results" , "sp-AICs.rda"))
 }
 
-```
 
-```{R}
-
-whi.mi = which.min(colMeans(AICs))
+whi.mi = which.min(colMeans(sp.AICs))
 print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
 ```
 
+####3. Statistics (scaled)
+
 ```{R}
 
-CIs = matrix( NA, 100, 2)
-for ( i in 1:n.iter){
-  mod = model2( sp.coh, 250, scale = T, specify.model = whi.mi)
-  CIs[i,] = mod[[2]]
-}
-
-colMeans(CIs)
-```
-
-
-
-
-```{R, echo = F}
-
-sam.len = dim(sp.coh)[1]/250
-sam = sample( 1:dim(sp.coh)[1], sam.len)
-
-
-sp = data.frame( sp =  as.vector(sp.coh[sam,] ),
-                 time = rep(sam, 6)/5/60,
-                 id =  as.factor(rep(1:6, each = length(sam))))
-
-```
-
-```{R, echo = F}
-
-fit = lm(sp$sp~sp$time)
-
-if( ! file.exists( file.path ( PROJHOME , "Figures" , "Groupspeed.pdf"))){
+if( !file.exists( file.path( PROJHOME , "Results", "stats-sp-sca.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  p = rep(NA,n.iter)
   
-  pdf( file.path (PROJHOME , "Figures", "Groupspeed.pdf"))
-  plot(sp$sp~sp$time, 
-       xlab = "Time (min)", 
-       ylab = "Ground speed (m/s)"
-       # type = "n" ,
-       # ylim = c(10,20)
-  )
-  abline( fit$coefficients[1],fit$coefficients[2], lwd = 2)
-  dev.off()
+  for ( i in 1:n.iter){
+    mod = model2( sp.coh, acf.sp[[2]], scale = T, specify.model = whi.mi)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+     if( !is.null(mod[[5]])){
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+     }
+    t[i] = mod[[7]]
+   if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+    p[i] = mod[[8]]
+  }
+  
+  stats.sp.sca = list( CIs, fixed.ef, rand.ef, t,r2,AIC,p)
+  save( stats.sp.sca, file = file.path (PROJHOME , "Results" , "stats-sp-sca.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-sp-sca.rda"))
 }
+
+colMeans(stats.sp.plot[[1]])
+median(p)
+```
+
+####3. Statistics (unscaled)
+
+```{R}
+
+if(file.exists( file.path( PROJHOME , "Results", "stats-sp-plot.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  p = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( sp.coh, acf.sp[[2]], scale = F, specify.model = whi.mi)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+     if( !is.null(mod[[5]])){
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+     }
+    t[i] = mod[[7]]
+   if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+    p[i] = mod[[8]]
+  }
+  
+  stats.sp.plot = list( CIs, fixed.ef, rand.ef, t,r2,AIC,p)
+  save( stats.sp.plot, file = file.path (PROJHOME , "Results" , "stats-sp-plot.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-sp-plot.rda"))
+}
+
+
 ```
 
 
 
-### 5. Dist to the centroid
+
+
+### 4. Dist to the centroid
 
 
 ```{R}
@@ -420,141 +548,390 @@ lr.coh = abs(obj[[2]])
 
 ####a. Front/back
 
-#### Autocorrelation 
-
-
-```{R, echo = F}
-
-acf(na.omit(as.vector(abs(frontback.res.cent) )), lag.max = 1000)
-
-```
-
-600
-
-# Which model is best? 
+####4a. Autocorrelation 
 
 ```{R}
 
-AICs = matrix(NA,100,3)
+acf = acf(na.omit(as.vector(fb.coh)), lag.max = 1000)
 
-
-for ( i in 1:n.iter){
-  mod= try( model2(fb.coh,600,scale = T))
-  AICs[i,] = mod[[3]]
+if( !file.exists(file.path (PROJHOME , "Results" , "acf-fb.rda"))){
+  acf.const = 600
+  acf.fb = list( acf, acf.const)
+  save( acf.fb , file = file.path ( PROJHOME, "Results", "acf-fb.rda") )
+} else {
+  load( file.path (PROJHOME , "Results", "acf-fb.rda"))
 }
-
 ```
 
+
+600 looks safe
+
+####4a. Which model is best? 
+
 ```{R}
+
+if ( ! file.exists(file.path(PROJHOME , "Results" , "fb-AICs.rda"))){
+  AICs = matrix(NA,n.iter,3)
+  
+  for ( i in 1:n.iter){
+    mod= try( model2(fb.coh,acf.fb[[2]],scale = T))
+    AICs[i,] = mod[[3]]
+  }
+  save( AICs , file = file.path(PROJHOME , "Results", "fb-AICs.rda"))
+} else {
+  load( file.path (PROJHOME , "Results" , "fb-AICs.rda"))
+}
 
 whi.mi = which.min(colMeans(AICs))
 print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
 ```
 
+####4a. Statistics (scaled)
+
 ```{R}
 
-CIs = matrix( NA, 100, 2)
-for ( i in 1:n.iter){
-  mod = model2(fb.coh, 600, scale = T, specify.model = whi.mi)
-  CIs[i,] = mod[[2]]
+if( !file.exists( file.path( PROJHOME , "Results", "stats-fb-sca.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( fb.coh, acf.fb[[2]], scale = T, specify.model = whi.mi)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+    t[i] = mod[[7]]
+   if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+  }
+  
+  stats.fb.sca = list( CIs, fixed.ef, rand.ef, t,r2,AIC)
+  save( stats.fb.sca, file = file.path (PROJHOME , "Results" , "stats-fb-sca.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-fb-sca.rda"))
 }
 
-colMeans(CIs)
+colMeans(stats.fb.sca[[1]])
 ```
+
+####4a. Statistics (unscaled)
+
+```{R}
+
+if( !file.exists( file.path( PROJHOME , "Results", "stats-fb-plot.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( fb.coh, acf.fb[[2]], scale = F, specify.model = whi.mi)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+    t[i] = mod[[7]]
+   if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+  }
+  
+  stats.fb.plot = list( CIs, fixed.ef, rand.ef, t,r2,AIC)
+  save( stats.fb.plot, file = file.path (PROJHOME , "Results" , "stats-fb-plot.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-fb-plot.rda"))
+}
+
+colMeans(stats.fb.plot[[1]])
+```
+
+
 
 
 
 ####b. left/right 
 
-```{R}
-acf(na.omit(as.vector(lr.coh )), lag.max = 1000)
-
-```
-200
-
-# Which model is best? 
+####4b Autocorrelation 
 
 ```{R}
 
-AICs = matrix(NA,100,3)
+acf = acf(na.omit(as.vector(lr.coh)), lag.max = 1000)
 
-
-for ( i in 1:n.iter){
-  mod= try( model2(lr.coh,200,scale = T))
-  AICs[i,] = mod[[3]]
+if( !file.exists(file.path (PROJHOME , "Results" , "acf-lr.rda"))){
+  acf.const = 300
+  acf.lr = list( acf, acf.const)
+  save( acf.lr , file = file.path ( PROJHOME, "Results", "acf-lr.rda") )
+} else {
+  load( file.path (PROJHOME , "Results", "acf-lr.rda"))
 }
-
 ```
 
+
+300
+
+####4b Which model is best? 
+
 ```{R}
+
+if ( ! file.exists(file.path(PROJHOME , "Results" , "lr-AICs.rda"))){
+  AICs = matrix(NA,n.iter,3)
+  
+  for ( i in 1:n.iter){
+    mod= try( model2(lr.coh,acf.lr[[2]],scale = T))
+    AICs[i,] = mod[[3]]
+  }
+  save( AICs , file = file.path(PROJHOME , "Results", "lr-AICs.rda"))
+} else {
+  load( file.path (PROJHOME , "Results" , "lr-AICs.rda"))
+}
 
 whi.mi = which.min(colMeans(AICs))
 print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
 ```
 
+####4b Statistics (scaled)
+
 ```{R}
 
-CIs = matrix( NA, 100, 2)
-for ( i in 1:n.iter){
-  mod = model2(lr.coh, 200, scale = T, specify.model = whi.mi)
-  CIs[i,] = mod[[2]]
+if( !file.exists( file.path( PROJHOME , "Results", "stats-lr-sca.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( lr.coh, acf.lr[[2]], scale = T, specify.model = whi.mi)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+    t[i] = mod[[7]]
+    if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+  }
+  
+  stats.lr.sca = list( CIs, fixed.ef, rand.ef, t,r2,AIC)
+  save( stats.lr.sca, file = file.path (PROJHOME , "Results" , "stats-lr-sca.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-lr-sca.rda"))
 }
 
-colMeans(CIs)
+colMeans(stats.lr.sca[[1]])
 ```
 
+####4b Statistics (unscaled)
 
 ```{R}
 
-r.squaredGLMM( mod.fb[[3]])
-
-```
-
-
-
-
-###6. Dorsal body amplitude
-
-#### Autocorrelation 
-
-```{R}
-
-acf( na.omit(as.vector(dba.coh)), lag.max = 1000)
-
-```
-
-100 seems fine
-
-# Which model is best? 
-
-```{R}
-
-AICs = matrix(NA,100,3)
-
-
-for ( i in 1:n.iter){
-  mod= try( model2(dba.coh,100,scale = T))
-  AICs[i,] = mod[[3]]
+if(! file.exists( file.path( PROJHOME , "Results", "stats-lr-plot.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( lr.coh, acf.lr[[2]], scale = F, specify.model = whi.mi)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+    t[i] = mod[[7]]
+if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+  }
+  
+  stats.lr.plot = list( CIs, fixed.ef, rand.ef, t,r2,AIC)
+  save( stats.lr.plot, file = file.path (PROJHOME , "Results" , "stats-lr-plot.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-lr-plot.rda"))
 }
 
+colMeans(stats.lr.plot[[1]])
 ```
 
+
+
+
+
+###5. Dorsal body amplitude
+
+
+####5. Autocorrelation 
+
 ```{R}
+
+acf = acf(na.omit(as.vector(dba.coh)), lag.max = 1000)
+
+if( !file.exists(file.path (PROJHOME , "Results" , "acf-dba.rda"))){
+  acf.const = 100
+  acf.dba = list( acf, acf.const)
+  save( acf.dba , file = file.path ( PROJHOME, "Results", "acf-dba.rda") )
+} else {
+  load( file.path (PROJHOME , "Results", "acf-dba.rda"))
+}
+```
+
+
+100 to be safe
+
+####5. Which model is best? 
+
+```{R}
+
+if ( ! file.exists(file.path(PROJHOME , "Results" , "dba-AICs.rda"))){
+  AICs = matrix(NA,n.iter,3)
+  
+  for ( i in 1:n.iter){
+    mod= try( model2(dba.coh,acf.dba[[2]],scale = T))
+    AICs[i,] = mod[[3]]
+  }
+  save( AICs , file = file.path(PROJHOME , "Results", "dba-AICs.rda"))
+} else {
+  load( file.path (PROJHOME , "Results" , "dba-AICs.rda"))
+}
 
 whi.mi = which.min(colMeans(AICs))
 print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
 ```
 
+####5. Statistics (scaled)
+
 ```{R}
 
-CIs = matrix( NA, 100, 2)
-for ( i in 1:n.iter){
-  mod = model2( dba.coh, 100, scale = T, specify.model = whi.mi)
-  CIs[i,] = mod[[2]]
+if( !file.exists( file.path( PROJHOME , "Results", "stats-dba-sca.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( dba.coh, acf.dba[[2]], scale = T, specify.model = whi.mi)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+    t[i] = mod[[7]]
+   if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+  }
+  
+  stats.dba.sca = list( CIs, fixed.ef, rand.ef, t,r2,AIC)
+  save( stats.dba.sca, file = file.path (PROJHOME , "Results" , "stats-dba-sca.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-dba-sca.rda"))
 }
 
-colMeans(CIs)
+colMeans(stats.dba.sca[[1]])
 ```
+
+####5. Statistics (unscaled)
+
+```{R}
+
+if( !file.exists( file.path( PROJHOME , "Results", "stats-dba-plot.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( dba.coh, acf.dba[[2]], scale = F, specify.model = whi.mi)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+    t[i] = mod[[7]]
+   if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+  }
+  
+  stats.dba.plot = list( CIs, fixed.ef, rand.ef, t,r2,AIC)
+  save( stats.dba.plot, file = file.path (PROJHOME , "Results" , "stats-dba-plot.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-dba-plot.rda"))
+}
+
+colMeans(stats.dba.plot[[1]])
+```
+
+```{R}
+
+rand.ef = 
+stats.dba.plot[[3]]
+
+```
+
+```{R, echo = F}
+
+
+fixed.ef = colMeans( stats.dba.plot[[2]])
+rand.ef = rep( NA, 6)
+arr = stats.dba.plot[[3]]
+for ( i in 1:6){
+  rand.ef[i] = mean(arr[i,2,])
+}
+mean_=(rand.ef+fixed.ef[2])
+time = (c(1:nrow(dba.coh))/60)
+#make final plot
+plot(rowMeans(dba.coh)~ time , col = cols, las = 1, ylim = c(12,15), xlab = "Time (min)", 
+     type = "n",
+     ylab = "Dorsal body amplitude (mm)")
+#and general response
+abline(h=fixed.ef[1], lwd = 4)
+#and plot each random slope
+for ( i in 1:6){
+  abline( h = as.numeric(rand.ef[i]) + as.numeric(fixed.ef[1]), col = cols[i], lwd=2 )
+}
+
+
+if( !file.exists(file.path(PROJHOME , "Figures", "dba.mixed.plot.pdf"))){
+  {  pdf( file.path ( PROJHOME , "Figures" , "dba.mixed.plot.pdf"))
+      #make final plot
+    plot(rowMeans(dba.coh)~ time , col = cols, las = 1, ylim = c(12,15), xlab = "Time (min)", 
+         type = "n",
+         ylab = "Dorsal body amplitude (mm)")
+        #and general response
+abline(h=fixed.ef[1], lwd = 4)
+    #and plot each random slope
+    for ( i in 1:6){
+      abline( h = as.numeric(rand.ef[i])+ as.numeric(fixed.ef[1]), col = cols[i], lwd=2 )
+    }
+
+    dev.off()
+  }
+}
+``` 
 
 ```{R}
 
@@ -567,5 +944,396 @@ if ( !file.exists( file.path(PROJHOME , "Figures", "dba.pdf"))){
   bm_plotDS(matr = dba.coh , return_means = F, total.bins = 98, error = "SD", ylim= c(9,20),ylab = "Dorsal body amplitude (mm)", xlab = "Time (min)")
 }
 
+```
+
+
+
+###6. Flap frequency - following split 
+
+
+####6. Autocorrelation 
+
+
+```{R}
+na.find = function ( x){
+  
+  which(is.na(x))[1]
+}
+for ( i in 1:ncol(ff.uncoh)){
+print(na.find(ff.uncoh[,i]))
+}
+
+```
+
+```{R}
+
+ff.uncoh = ff.uncoh[1:2947,]
+tail(ff.uncoh)
+```
+
+
+```{R}
+
+acf = acf(na.omit(as.vector(ff.uncoh)), lag.max = 1000)
+
+if( !file.exists(file.path (PROJHOME , "Results" , "acf-ffu.rda"))){
+  acf.const = 200
+  acf.ffu = list( acf, acf.const)
+  save( acf.ffu , file = file.path ( PROJHOME, "Results", "acf-ffu.rda") )
+} else {
+  load( file.path (PROJHOME , "Results", "acf-ffu.rda"))
+}
+```
+
+
+250 to be safe
+
+####6. Which model is best? 
+
+```{R}
+
+if ( ! file.exists(file.path(PROJHOME , "Results" , "ffu-AICs.rda"))){
+  AICs = matrix(NA,n.iter,3)
+  
+  for ( i in 1:n.iter){
+    mod= try( model2(ff.uncoh,acf.ffu[[2]],scale = T))
+    AICs[i,] = mod[[3]]
+  }
+  save( AICs , file = file.path(PROJHOME , "Results", "ffu-AICs.rda"))
+} else {
+  load( file.path (PROJHOME , "Results" , "ffu-AICs.rda"))
+}
+
+whi.mi = which.min(colMeans(AICs))
+print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
+```
+
+####6. Statistics (scaled)
+
+```{R}
+
+if( !file.exists( file.path( PROJHOME , "Results", "stats-ffu-sca.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( ff.uncoh, acf.ffu[[2]], scale = T, specify.model = whi.mi)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+    t[i] = mod[[7]]
+   if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+  }
+  
+  stats.ffu.sca = list( CIs, fixed.ef, rand.ef, t,r2,AIC)
+  save( stats.ffu.sca, file = file.path (PROJHOME , "Results" , "stats-ffu-sca.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-ffu-sca.rda"))
+}
+
+colMeans(stats.ffu.sca[[5]])
+```
+
+####6. Statistics (unscaled)
+
+```{R}
+
+if( file.exists( file.path( PROJHOME , "Results", "stats-ffu-plot.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( ff.uncoh, acf.ffu[[2]], scale = F, specify.model = whi.mi)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+    t[i] = mod[[7]]
+   if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+  }
+  
+  stats.ffu.plot = list( CIs, fixed.ef, rand.ef, t,r2,AIC)
+  save( stats.ffu.plot, file = file.path (PROJHOME , "Results" , "stats-ffu-plot.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-ffu-plot.rda"))
+}
+
+colMeans(stats.ffu.plot[[1]])
+```
+
+###7. Flap frequency vs nn.dist 
+
+```{R}
+
+
+sq = seq(2,dim(fb.coh)[1]-5,5)
+
+nn = lr.coh[sq,]
+ff = ff.coh
+
+par( mfrow= c(2,1))
+acf( as.vector(nn), lag.max = 1000)
+acf( as.vector(ff), lag.max = 1000)
+```
+
+####7. acf
+
+```{r}
+
+if( file.exists(file.path (PROJHOME , "Results" , "acf-nnff.rda"))){
+  acf.const = 400 # half way between acf values
+  acf.nnff = list( acf, acf.const)
+  save( acf.nnff , file = file.path ( PROJHOME, "Results", "acf-nnff.rda") )
+} else {
+  load( file.path (PROJHOME , "Results", "acf-nnff.rda"))
+}
+```
+
+
+####7. Which model is best? 
+
+```{R}
+
+if (  file.exists(file.path(PROJHOME , "Results" , "nnff-AICs.rda"))){
+  AICs = matrix(NA,n.iter,3)
+  
+  for ( i in 1:n.iter){
+    mod= try( model2(nn,acf.nnff[[2]],scale = T, var2 = ff, var2.time = F))
+    AICs[i,] = mod[[3]]
+  }
+  save( AICs , file = file.path(PROJHOME , "Results", "nnff-AICs.rda"))
+} else {
+  load( file.path (PROJHOME , "Results" , "nnff-AICs.rda"))
+}
+
+whi.mi = which.min(colMeans(AICs))
+print( c("simple linear model is best", "random intercepts only","random intercepts and slopes")[whi.mi])
+```
+
+####7. Statistics (scaled)
+
+```{R}
+
+if( file.exists( file.path( PROJHOME , "Results", "stats-nnff-sca.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( nn, acf.nnff[[2]], scale = T, specify.model = whi.mi, var2= ff, var2.time = F, plot=T)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+    t[i] = mod[[7]]
+   if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+  }
+  
+  stats.nnff.sca = list( CIs, fixed.ef, rand.ef, t,r2,AIC)
+  save( stats.nnff.sca, file = file.path (PROJHOME , "Results" , "stats-nnff-sca.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-nnff-sca.rda"))
+}
+
+colMeans(stats.nnff.sca[[5]])
+```
+
+```{R}
+
+if( file.exists( file.path( PROJHOME , "Results", "stats-nnff-sca.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  p = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+ mod = model2( nn, acf.nnff[[2]], scale = T, specify.model = whi.mi, var2= ff, var2.time = F, plot=F)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+     if( !is.null(mod[[5]])){
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+     }
+    t[i] = mod[[7]]
+   if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+    p[i] = mod[[8]]
+  }
+  
+  stats.nnff.sca = list( CIs, fixed.ef, rand.ef, t,r2,AIC,p)
+  save( stats.nnff.sca, file = file.path (PROJHOME , "Results" , "stats-nnff-sca.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-nnff-sca.rda"))
+}
+
+colMeans(stats.nnff.sca[[7]])
+median(stats.nnff.sca[[7]])
+
+```
+
+####7. Statistics (unscaled)
+
+```{R}
+
+if( file.exists( file.path( PROJHOME , "Results", "stats-nnff-plot.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+  fixed.ef = matrix( NA,n.iter,2)
+  rand.ef  = array( NA, c(6,2,n.iter))
+  t = rep(NA,n.iter)
+ r2 = matrix(NA, n.iter,2)
+  AIC = rep(NA,n.iter)
+  
+  for ( i in 1:n.iter){
+    mod = model2( nn, acf.nnff[[2]], scale = F, specify.model = whi.mi, var2 = ff, var2.time = F, plot=T)
+    CIs[i,] = mod[[2]]
+    fixed.ef[i,] = mod[[4]]
+    rand.ef[,,i] = matrix(unlist(mod[[5]]), 6,2)
+    t[i] = mod[[7]]
+   if( length( mod[[6]]) == 1){
+    r2[i,1]= mod[[6]]
+    } else { 
+      r2[i,] = mod[[6]]
+      }
+    AIC[i]=mod[[3]]
+  }
+  
+  stats.nnff.plot = list( CIs, fixed.ef, rand.ef, t,r2,AIC)
+  save( stats.nnff.plot, file = file.path (PROJHOME , "Results" , "stats-nnff-plot.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-nnff-plot.rda"))
+}
+
+colMeans(stats.nnff.plot[[1]])
+```
+
+
+
+
+###8. Descriptives 
+
+
+##### mins before split
+
+```{R}
+ t = round(coh/60/5 , 2)
+print (paste0(c( t, "Minutes before split")))
+```
+
+##### mins after split GPS 
+
+```{R}
+
+load( file.path( PROJHOME, "Output", "gGPS", "g2.34.rda")) 
+dim(data)[1]/5/60-t
+```
+
+For the slowest.. What about the fastest. 
+
+```{R}
+
+load(file.path (PROJHOME , "Data", "release-site-coordinates.rda" ))
+
+dis2home = matrix(NA,nrow(data),dim(data)[3])
+for( i in 1:6){
+dis2home[,i]=get_dist( data[,"lon",i], data[,"lat",i], rsc$lon[rsc$site=="home"], rsc$lat[rsc$site=="home"], method = "distance")
+}
+
+{plot(dis2home[,1])
+
+for ( i in 2:6){
+  lines(dis2home[,i],col=i)
+}
+}
+```
+Black (1) got home fastest. But what was the average and standard deviation
+
+```{R}
+
+timehome = rep(NA,6)
+for ( i in 1:6){
+timehome[i]=which( dis2home[,i] <200)[1]/5/60 - t
+}
+
+c(mean(timehome), sd(timehome))
+```
+
+
+###### mins after split (ACC)
+
+```{R}
+2947/60
+```
+
+######comparing methods for confint
+
+```{R}
+
+
+if(! file.exists( file.path( PROJHOME , "Results", "stats-ff-sca-confint.rda"))){
+  CIs = matrix( NA, n.iter, 2)
+
+  
+  for ( i in 1:n.iter){
+    mod = model2( ff.coh, acf.ff[[2]], scale = T, specify.model = whi.mi, conf.method =  "confint")
+    CIs[i,] = mod[[2]]
+   
+  }
+  
+  stats.ff.sca.confint =  list( CIs, fixed.ef, rand.ef, t,r2,AIC)
+  save( stats.ff.sca.confint, file = file.path (PROJHOME , "Results" , "stats-ff-sca-confint.rda"))
+} else { 
+  load( file.path ( PROJHOME , "Results" , "stats-ff-sca-confint.rda"))
+}
+
+  load( file.path ( PROJHOME , "Results" , "stats-ff-sca.rda"))
+t.test(stats.ff.sca[[1]][,1], stats.ff.sca.confint[[1]][,1])
+t.test(stats.ff.sca[[1]][,2], stats.ff.sca.confint[[1]][,2])
+
+```
+
+####average drop in flap frequency
+
+```{R}
+
+mean.before = rep (NA,6)
+mean.after =  rep (NA,6)
+
+for ( i in 1:6){
+mean.before[i] = mean( ff.coh[ 1:300,i])
+mean.after [i] = mean( ff.coh[ ((nrow(ff.coh)-300):nrow(ff.coh)),i])
+}
+
+c( mean( mean.before - mean.after),
+sd ( mean.before - mean.after))
 ```
 
