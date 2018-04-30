@@ -23,7 +23,7 @@ rm(list=ls())
 
 # objects 
 
-n.iter = 100
+n.iter = 100 # 1000 for the study, but 100 works well for demonstration purposes
 
 # libraries 
 
@@ -170,6 +170,8 @@ colMeans(stats.nn.plot[[1]])
 ```
 
 
+ expect error messages in unscaled statistics. Explained in manuscript. 
+
 ####1. plot
 
 ```{R, echo = F}
@@ -230,7 +232,6 @@ if( !file.exists(file.path (PROJHOME , "Results" , "acf-ff.rda"))){
 }
 ```
 
-cho0se 100
 
 ####2. Which model is best? 
 
@@ -288,10 +289,11 @@ if( !file.exists( file.path( PROJHOME , "Results", "stats-ff-sca.rda"))){
   load( file.path ( PROJHOME , "Results" , "stats-ff-sca.rda"))
 }
 
-colMeans(stats.ff.sca[[1]])
+median(stats.ff.sca[[7]])
 
-median(p)
 ```
+
+p.value 
 
 ####2. Statistics (unscaled)
 
@@ -329,10 +331,11 @@ if(! file.exists( file.path( PROJHOME , "Results", "stats-ff-plot.rda"))){
   load( file.path ( PROJHOME , "Results" , "stats-ff-plot.rda"))
 }
 
-colMeans(stats.ff.plot[[1]])
-median(p)
+median(stats.ff.plot[[7]])
+
 ```
 
+p.value
 
 ####2. plot
 
@@ -564,7 +567,7 @@ if( !file.exists(file.path (PROJHOME , "Results" , "acf-fb.rda"))){
 ```
 
 
-600 looks safe
+
 
 ####4a. Which model is best? 
 
@@ -678,7 +681,6 @@ if( !file.exists(file.path (PROJHOME , "Results" , "acf-lr.rda"))){
 ```
 
 
-300
 
 ####4b Which model is best? 
 
@@ -793,7 +795,6 @@ if( !file.exists(file.path (PROJHOME , "Results" , "acf-dba.rda"))){
 ```
 
 
-100 to be safe
 
 ####5. Which model is best? 
 
@@ -986,7 +987,6 @@ if( !file.exists(file.path (PROJHOME , "Results" , "acf-ffu.rda"))){
 ```
 
 
-250 to be safe
 
 ####6. Which model is best? 
 
