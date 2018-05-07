@@ -67,7 +67,6 @@ for ( i in 1:(length(store)-1)){
   sd   = c(sd  ,   sd(flaps[store[i]:store[i+1]]))
 }
 
-plot(mean~ Time.min)
 ```
 ```{R}
 # flap frequency - per second
@@ -96,7 +95,6 @@ for ( j in 1:6){
   
 }
 
-plot(rowMeans(ff.ps))
 
 ```
 ```{R}
@@ -128,7 +126,6 @@ for ( j in 1:6){
 }
 
 dba.ps[dba.ps>100] = NA
-plot(rowMeans(dba.ps))
 
 ```
 ```{R}
@@ -174,7 +171,7 @@ for ( i in 1:6){
   ff.uncoh[1:length.solo[i],i] = ff.ps[ceiling(fission[i]):(rows.of.data[i]-1),i]
 }
 
-plot(rowMeans(ff.uncoh))
+
   
 save(ff.coh, file =  file.path(PROJHOME , "Output" , "ff-coh.rda"))
 save(ff.uncoh,file=  file.path(PROJHOME , "Output" , "ff-uncoh.rda"))
