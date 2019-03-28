@@ -1,0 +1,51 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{R}
+# libraries 
+library(longFlight)
+
+#objects 
+cohesive.length = 5861
+
+# files/folders
+fold = file.path(PROJHOME , "Output")
+
+#data
+load( file.path (fold, "ffvsnn.rda"))
+load(file.path(fold, "gGPS", "g2.34-2.rda"))
+
+# manipulate dataset 
+GPSdata = data[,,order ( as.numeric(dimnames(data)[[3]]))]
+
+```
+
+# speed 
+
+```{R}
+#objects 
+len = dim(ff)[1]
+
+# loop
+speed.mat = matrix( NA, len, dim(ff)[2], dimnames = list ( NULL,dimnames(ff)[[2]]))
+for (  i in 1:dim(GPSdata)[3]){
+  #i=1
+  speed.mat[,i] = get_dist(GPSdata[1:len,"lon",i],
+         GPSdata[1:len,"lat",i],hz = 5, method = "speed")
+}
+
+speed = as.vector(speed.mat)
+flap  = as.vector(ff)
+
+acf(na.omit(speed), lag.max = 1000)
+
+acf.num = 150
+l2 = length(speed)
+sam = sample( 1:l2, l2/acf.num)
+
+summary( lm ( flap[sam]~speed[sam] ))
+
+plot(speed)
+```

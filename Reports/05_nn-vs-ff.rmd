@@ -1,0 +1,699 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# NEAREST NEIGHBOUR VS ACC
+
+##1. TIME MATCHING 
+
+```{R}
+#remove variables 
+rm(list=ls())
+
+#libraries 
+library(longFlight)
+library(stringr)
+
+
+# data
+GPSfold = file.path( PROJHOME , "Data", "GPS")
+ACCfold = file.path( PROJHOME , "Data", "ACC")
+GPSfiles = list.files(GPSfold)
+ACCfiles = list.files(ACCfold)
+splitstringGPS = str_split_fixed(GPSfiles,"\\.",16)
+splitstringACC = str_split_fixed(ACCfiles,"\\.",16)
+GPSfiles = GPSfiles[order(splitstringGPS[,11])]
+ACCfiles = ACCfiles[order(splitstringACC[,12])]
+
+```
+
+
+#### find GPS starting point
+```{R}
+# objects 
+speed.start = c( 13000,13000,12800,12700,12800,13100)
+speed.window = 500
+
+# load data, calculate speed, and find starting point
+speedarray = array( NA, c(speed.window,2,6 ), dimnames = list(NULL,c("speed","time"),NULL))
+for ( i in 1:6){
+  GPSdata = read.csv(file.path( GPSfold,GPSfiles[i]),header = T)
+  speed = get_dist(as.numeric(as.character(GPSdata$LONGITUDE[speed.start[i]:(speed.start[i]+speed.window-1)])),
+                   as.numeric(as.character(GPSdata$LATITUDE [speed.start[i]:(speed.start[i]+speed.window-1)])), method = "speed", hz=5)
+  plot(speed)
+  splitstringTIME = str_split_fixed(GPSdata$UTC.TIME[speed.start[i]:(speed.start[i]+speed.window-1)],":",3)
+  time = apply( splitstringTIME, 1, function (x){
+    x2 = as.numeric(x)
+    return(sum(x2 * c(3600,60,1)))
+  })
+  speedarray[,,i] = cbind(speed,time)
+}
+
+```
+
+#### find ACC staring point
+```{R}
+
+# objects 
+z.start = c(24000,24000,24000,24000,24000,24000)
+z.window = 2000
+
+# load data, and find starting point
+accarray = array( NA, c(z.window,4,6 ), dimnames = list(NULL,c("x","y","z","time"),NULL))
+
+#loop
+for ( i in 1:6){
+  #i=1
+  
+  # load
+  ACCdata = read.csv(file.path( ACCfold,ACCfiles[i]),header = T)
+  
+  # subset
+  z = ACCdata[z.start[i]:(z.start[i]+z.window),5]
+  plot(z)
+  
+  # find starting point, add to array 
+  foo = str_split_fixed(ACCdata[z.start[i]:(z.start[i]+z.window-1),2]," ",2)[,2]
+  foo = str_split_fixed(foo, "\\.",2)[,1]
+  splitstringTIME = str_split_fixed(foo,":",3)
+  time = apply( splitstringTIME, 1, function (x){
+    x2 = as.numeric(x)
+    return(sum(x2 * c(3600,60,1 )))
+  })
+  accarray[,,i] = 
+    as.matrix(cbind(ACCdata[z.start[i]:(z.start[i]+z.window-1),3:5],time))
+}
+
+```
+
+# plot ACC start times 
+
+```{R}
+for ( i in 1:6){
+  plot( accarray[,"z",i]~accarray[,"time",i])
+}
+
+```
+
+roughly 52445
+```{R}
+
+for ( i in 1:6){
+  plot( speedarray[,"speed",i]~speedarray[,"time",i])
+}
+
+```
+
+roughly 48844
+
+```{R}
+52445-48844
+```
+
+3601 is one hour and one second. The one second is close enough to ignore for the purposes of this study. the one hour is due to time being in BST for the ACC. 
+
+The solution is to minus an hour from all times recorded with ACCs
+
+##2. GPS
+
+#### Data 
+```{R}
+# remove variables
+rm(list= ls())
+
+#libraries
+library(longFlight)
+
+# data
+load( file.path ( PROJHOME , "Output" , "gGPS", "g2.34-2.rda"))
+
+# manipulate
+GPSdata = data
+
+#objects 
+start.time = GPSdata[1,"time",1] 
+plotcol = rainbow(6)
+
+# print
+GPSdata[1:2,,1:2]
+```
+
+#### Plot
+```{R}
+{plot( GPSdata[,"lon",1],GPSdata[,"lat",1],type = "l", col = plotcol[1])
+  for ( i in 2:6){
+    lines(  GPSdata[,"lon",i],GPSdata[,"lat",i],col = plotcol[i])
+  }}
+```
+
+#### Nearest neighbours 
+```{R}
+# arrays 
+flight.len =  dim( GPSdata)[1]
+nn.array = array( NA, c(flight.len, 6,6 ),dimnames = list(NULL,NULL,dimnames(GPSdata)[[3]]))
+nn.rank  = array( NA, c(flight.len, 5,6 ),dimnames = list(NULL,NULL,dimnames(GPSdata)[[3]]))
+
+# Neighbour distances
+for ( i in 1:6){
+  for ( j in 1:6){
+    if( i != j){
+      nn.array[,i,j] = get_dist(GPSdata[,"lon",i],GPSdata[,"lat",i],
+                                GPSdata[,"lon",j],GPSdata[,"lat",j], method = "distance")
+    }
+  }
+}
+
+# rank order
+rank.path = file.path(PROJHOME,"Output","nn-rank.rda")
+if( !file.exists(rank.path)){
+  for ( i in 1:6){
+    d = nn.array[,-i,i]
+    m = t(apply(d,1,function(x) {
+      return( c( sort(x), rep(NA,( 5- length(na.omit(x) )) )))
+    }))
+    nn.rank[,,i] = m
+    print(i)
+  }
+  save( nn.rank, file = rank.path)
+}else{
+  load( rank.path)
+}
+
+# first, second and third nearest neighbours 
+nn1 = matrix(NA, nrow = 15291,ncol=6)
+colnames(nn1) = dimnames(GPSdata)[[3]]
+for ( i in 1:6){
+  x = nn.rank[,1,i]
+  x2 = suppressWarnings( colMeans(matrix(x, nrow=5)))
+  nn1[,i] = x2
+}
+nn2 = matrix(NA, nrow = 15291,ncol=6)
+colnames(nn2) = dimnames(GPSdata)[[3]]
+for ( i in 1:6){
+  x = nn.rank[,2,i]
+  x2 = suppressWarnings( colMeans(matrix(x, nrow=5)))
+  nn2[,i] = x2
+}
+nn3 = matrix(NA, nrow = 15291,ncol=6)
+colnames(nn3) = dimnames(GPSdata)[[3]]
+for ( i in 1:6){
+  x = nn.rank[,3,i]
+  x2 = suppressWarnings( colMeans(matrix(x, nrow=5)))
+  nn3[,i] = x2
+}
+nn4 = matrix(NA, nrow = 15291,ncol=6)
+colnames(nn4) = dimnames(GPSdata)[[3]]
+for ( i in 1:6){
+  x = nn.rank[,4,i]
+  x2 = suppressWarnings( colMeans(matrix(x, nrow=5)))
+  nn4[,i] = x2
+}
+nn5 = matrix(NA, nrow = 15291,ncol=6)
+colnames(nn5) = dimnames(GPSdata)[[3]]
+for ( i in 1:6){
+  x = nn.rank[,5,i]
+  x2 = suppressWarnings( colMeans(matrix(x, nrow=5)))
+  nn5[,i] = x2
+}
+
+#save
+nn1 = nn1[,order(as.numeric(colnames(nn1)))]
+nn2 = nn2[,order(as.numeric(colnames(nn2)))]
+nn3 = nn3[,order(as.numeric(colnames(nn3)))]
+nn4 = nn4[,order(as.numeric(colnames(nn4)))]
+nn5 = nn5[,order(as.numeric(colnames(nn5)))]
+save( nn1, file = file.path( PROJHOME , "Output" , "nn-1.rda"))
+save( nn2, file = file.path( PROJHOME , "Output" , "nn-2.rda"))
+save( nn3, file = file.path( PROJHOME , "Output" , "nn-3.rda"))
+save( nn4, file = file.path( PROJHOME , "Output" , "nn-4.rda"))
+save( nn5, file = file.path( PROJHOME , "Output" , "nn-5.rda"))
+head(nn1)
+
+
+```
+
+
+#### Distance to centroid
+```{R}
+
+centroid = cbind( lon = rowMeans( GPSdata[,"lon",],na.rm = T),
+                  lat = rowMeans( GPSdata[,"lat",],na.rm = T))
+head(centroid)
+
+d2c = matrix(NA,nrow(centroid),6,
+             dimnames = list(NULL, dimnames(GPSdata)[[3]]))
+
+for ( i in 1:6){
+  d2c[,i] = get_dist( GPSdata[,"lon",i], GPSdata[,"lat",i],
+                      centroid[,"lon"] , centroid[,"lat"] , method = "distance")
+}
+
+{plot(d2c[,1],col= plotcol[1], type = "l")
+  for ( i in 2:6){
+    lines(d2c[,i],col=plotcol[i])
+  }}
+```
+
+#### length of cohesive flight
+```{R}
+vec= rep(NA,6)
+names(vec) = dimnames(d2c)[[2]]
+for ( i in 1:6){
+  vec[i] = which(d2c[,i] >50)[1]
+}
+cohesive.length = min(vec) / 5 # 5 is hz
+cohesive.length
+```
+
+
+##.3 ACC
+
+```{R}
+#libraries 
+library(stringr)
+
+#objects 
+start.time = 48990
+cohesive.length = 5861
+end.time = start.time + cohesive.length
+
+#files/folders 
+fold = file.path( PROJHOME , "Output" , "mACC")
+fil= list.files (fold)
+splitstring = str_split_fixed(fil,"\\.",18)
+files = fil[ splitstring[,16] != "num" ]
+splitstring = str_split_fixed(files,"\\.",18)
+GPSmatch = matrix(NA,2,6)
+colnames(GPSmatch) = splitstring[,12]
+
+#data/manipulate
+for ( i in 1:length(files)){
+  #i=4
+  load ( file.path( fold, files[i]))
+  data[,"time"] = data[,"time"] -3600
+  GPSmatch[1,i] = which(data[,"time"] ==start.time)[1]
+  GPSmatch[2,i] = which(data[,"time"] ==  end.time)[1]
+  tb = table(round(data[,"time"])) 
+  
+  #plot( data[seq( 1,nrow( data), 1),"ff"],ylim = c(0,20),
+  #main = splitstring[i,12] )
+  
+  data = as.data.frame(data)
+  assign(  paste0("P", splitstring[i,12]),data)
+  
+}
+
+```
+
+
+
+```{R}
+# subset dataframes to match GPS
+P69 = P69[GPSmatch[1,"69"]:GPSmatch[2,"69"],]
+P76 = P76[GPSmatch[1,"76"]:GPSmatch[2,"76"],]
+P47 = P47[GPSmatch[1,"47"]:GPSmatch[2,"47"],]
+P46 = P46[GPSmatch[1,"46"]:GPSmatch[2,"46"],]
+P74 = P74[GPSmatch[1,"74"]:GPSmatch[2,"74"],]
+P95 = P95[GPSmatch[1,"95"]:GPSmatch[2,"95"],]
+
+# # # # work
+
+# P69 = rbind( P69[1:1000,], P69[1500:nrow(P69),])
+# P76 = rbind( P76[1:1000,], P76[1500:nrow(P69),])
+# P47 = rbind( P47[1:1000,], P47[1500:nrow(P69),])
+# P46 = rbind( P46[1:1000,], P46[1500:nrow(P69),])
+# P74 = rbind( P74[1:1000,], P74[1500:nrow(P69),])
+# P95 = rbind( P95[1:1000,], P95[1500:nrow(P69),])
+# 
+
+
+# # # # 
+# Flaps per second (fps)
+for ( i in colnames(GPSmatch)){
+  #i="69"
+  d = get(paste0("P",i))
+  t = table(d$time)
+  
+  # # # work 
+  
+  tt = as.numeric(names(t))
+  tt2 = tt - tt[1] +1
+  
+  d$t = d$time-d$time[1]+1
+  
+  vec = rep(0,max(tt2))
+  
+  for ( j in 1:max(tt2)){
+    #i=1
+    if ( any ( d$t == j, na.rm = T)){
+      vec[j] = mean(d$ff[ which( d$t == j) ])
+    }
+  }
+  assign( paste0("fps",i),vec)
+  print(i)
+  
+}
+
+
+
+ff = cbind( fps46,
+            fps47,
+            fps69,
+            fps74,
+            fps76,
+            fps95)
+
+colnames (ff) = as.character(sort(as.numeric(colnames(GPSmatch))))
+head(ff)
+nrow(ff) == cohesive.length
+save(ff, file= file.path(PROJHOME, "Output" , "ffvsnn.rda"))
+
+# PLOT
+{
+  pdf ( file.path ( PROJHOME , "Figures" , "ff-hist.pdf"))
+  {par( mar = c(5,8,9,5))
+    hist(as.vector(ff), xlim = c(0,10), breaks = 100, main = "Flap frequency histogram", xlab = "Flap Frequency (Hz)", cex.lab = 2,lwd = 2, col = "cornflowerblue", cex.axis = 1.5)}
+  dev.off()
+  hist(as.vector(ff), xlim = c(0,10), breaks = 100, main = "Flap frequency histogram", xlab = "Flap Frequency (Hz)", cex.lab = 2,lwd = 2, col = "cornflowerblue", cex.axis = 1.5)
+}
+```
+
+no gliding periods! no missing seconds
+
+
+##4. combine
+
+```{R}
+
+#objects 
+cohesive.length = 5861
+
+# files/folders
+fold = file.path(PROJHOME , "Output")
+
+#data
+load( file.path (fold, "ffvsnn.rda"))
+load(file.path(fold, "nn-1.rda"))
+load(file.path(fold, "nn-2.rda"))
+load(file.path(fold, "nn-3.rda"))
+load(file.path(fold, "nn-4.rda"))
+load(file.path(fold, "nn-5.rda"))
+
+
+#manip
+nn1 = nn1[1:cohesive.length,]
+nn2 = nn2[1:cohesive.length,]
+nn3 = nn3[1:cohesive.length,]
+nn4 = nn4[1:cohesive.length,]
+nn5 = nn5[1:cohesive.length,]
+dim(nn1) == dim(ff)
+```
+
+
+
+```{R}
+n.iter = 1000
+dat = cbind( ff = as.vector(ff),
+             nn1= as.vector(nn1),
+             nn2= as.vector(nn2),
+             nn3= as.vector(nn3),
+             nn4= as.vector(nn4),
+             nn5= as.vector(nn5))
+nrow(dat)
+
+str(dat)
+
+p = matrix(NA,n.iter,9)
+colnames(p)= c("nn1","nn2","nn3","nn4", "nn5", "n1&2","n1-3","n1-4","n1-5")
+t = matrix(NA,n.iter,9)
+colnames(t)= c("nn1","nn2","nn3","nn4", "nn5", "n1&2","n1-3","n1-4","n1-5")
+
+for ( i in 1:n.iter){
+  minidat = dat[sample( 1:nrow(dat),round(nrow(dat)/1)) ,]
+  md = as.data.frame(minidat)
+  md = md[complete.cases(md),]
+  mod = lm(ff~nn1*nn2*nn3*nn4*nn5,data=md)
+  p[i,"nn1"]  =summary(mod)$coeff[2,4]
+  p[i,"nn2"]  =summary(mod)$coeff[3,4]
+  p[i,"nn3"]  =summary(mod)$coeff[4,4]
+  p[i,"nn4"]  =summary(mod)$coeff[5,4]
+  p[i,"nn5"]  =summary(mod)$coeff[6,4]
+  p[i,"n1&2"] =summary(mod)$coeff[7,4]
+  p[i,"n1-3"] =summary(mod)$coeff[17,4]
+  p[i,"n1-4"] =summary(mod)$coeff[27,4]
+  p[i,"n1-5"] =summary(mod)$coeff[32,4]
+  
+  t[i,"nn1"]  =summary(mod)$coeff[2,3]
+  t[i,"nn2"]  =summary(mod)$coeff[3,3]
+  t[i,"nn3"]  =summary(mod)$coeff[4,3]
+  t[i,"nn4"]  =summary(mod)$coeff[5,3]
+  t[i,"nn5"]  =summary(mod)$coeff[6,3]
+  t[i,"n1&2"] =summary(mod)$coeff[7,3]
+  t[i,"n1-3"] =summary(mod)$coeff[17,3]
+  t[i,"n1-4"] =summary(mod)$coeff[27,3]
+  t[i,"n1-5"] =summary(mod)$coeff[32,3]
+  
+  #mod = lm(ff~nn1,data=md)
+  #mod2 = lm(ff ~ poly(nn1,3),data =md)
+  #p[i,"nn1"]  =summary(mod)$coeff[2,4]
+  #t[i,"nn1"]  =summary(mod)$coeff[2,3]
+  
+  # p[i,2] = summary(mod2)$coeff[4,4]
+  #t[i,2] = summary(mod2)$coeff[2,3]
+  #print(i)
+  
+  #library(ggplot2)
+  ggplot(md, aes(y=ff,x=nn1))+
+    geom_point(colour = "grey")+
+    geom_smooth()+
+    ylim(6.5,7.5)+
+    xlim(0,3)
+  head(dat)
+}
+
+
+```
+
+```{R}
+density(p[,1])$x[which.max(density(p[,1])$y)]
+```
+
+```{R}
+median(p[,1])
+```
+
+```{R}
+median(t[,1])
+```
+
+
+```{R}
+median(t[,2])
+median(p[,2])
+```
+
+
+```{R}
+median(p[,"n1&2"])
+median(t[,"n1&2"])
+```
+
+```{R}
+median(p[,"n1-3"])
+median(t[,"n1-3"])
+```
+
+```{R}
+median(p[,"n1-4"])
+median(t[,"n1-4"])
+```
+
+
+```{R}
+median(p[,"n1-5"])
+median(t[,"n1-5"])
+```
+
+
+
+##5. Speed and flap freq
+
+#### Data 
+```{R}
+# remove variables
+rm(list= ls())
+
+#libraries
+library(longFlight)
+
+# data
+load( file.path ( PROJHOME , "Output" ,  "GPS-coh.rda"))
+load( file.path ( PROJHOME , "Output" ,  "gGPS" , "g2.34.rda"))
+
+
+#speed
+speed.mat = matrix(NA, dim(data)[[1]],6)
+for (  i in 1:6){
+  speed.mat[,i] = get_dist(data[,"lon",i], data[,"lat",i],method = "speed",hz = 5)
+}
+speed= as.vector(speed.mat[1:dim(data)[[1]],])
+
+#autocorrelation
+speed = as.vector(GPS.coh[, "speed",] )
+acf = acf(speed , lag.max = 1000)
+
+
+```
+```{R}
+
+ff2 = as.vector(ff)
+
+
+p=rep(NA,1000)
+t=rep(NA,1000)
+for( i in 1:1000){
+  sam = sample(1:length(ff2),round(length(ff2)/600))
+  s = summary(lm(ff2[sam]~speed[sam] ))
+  p[i]= s$coeff[2,4]
+  t[i]= s$coeff[2,3]
+}
+
+c(median(p),median(t))
+```
+
+
+
+
+#### speed after split
+
+
+```{R}
+#working/envir 
+rm(list = ls())
+
+#data
+load( file.path( PROJHOME , "Output" , "gGPS", "g2.34.rda"))
+
+#objects 
+fis.dist = 50
+names = dimnames(data)[[3]]
+
+#speed
+speed.mat = matrix(NA, dim(data)[[1]],6, dimnames = list(NULL, names))
+for (  i in 1:6){
+  speed.mat[,i] = longFlight::get_dist(data[,"lon",i], data[,"lat",i],method = "speed",hz = 5)
+}
+
+
+# centroid of whole group regardless of fission
+centroid = data.frame( x = apply(data[,"lon",], 1, function(x) { mean(x,na.rm = T)}), y = apply(data[,"lat",], 1, function(x) { mean(x,na.rm = T)})) 
+
+# distance to centroid
+dist2cent = matrix(NA, nrow(data[,,1]), 6,dimnames = list(NULL, dimnames(data)[[3]])) 
+for ( k in 1:6){ 
+  dist2cent[,k] = longFlight::get_dist( data[,"lon",k], data[, "lat", k], centroid$x, centroid$y , method = "distance") # get the distance between the individual and the centroid
+}
+dist2save = dist2cent
+vec = rep(NA,6)
+vec2= rep(NA,6)
+
+
+dist2cent = dist2save
+assign( paste0( "d2c_",1), dist2cent)
+for ( i in 1:4){
+  #i=5
+  names = dimnames(dist2cent)[[2]]
+  vec[i] = names[which.min(apply( dist2cent , 2, function(x){ which(x > fis.dist)[1]}))]
+  vec2[i] =      min(apply( dist2cent , 2, function(x){ which(x > fis.dist)[1]}))
+  
+  remaining.ind = names[-which( names %in% vec[1:i]) ]
+  dist2cent = matrix(NA, nrow(data[,,1]), (6-i), dimnames =  list(NULL,remaining.ind) )
+  
+  centroid = data.frame( x = apply(data[,"lon",remaining.ind], 1, function(x) { mean(x,na.rm = T)}),
+                         y = apply(data[,"lat",remaining.ind], 1, function(x) { mean(x,na.rm = T)}))
+  
+  for ( k in  1:(6-i)){ 
+    
+    dist2cent[,k] = longFlight::get_dist( data[,"lon",remaining.ind[k] ], data[, "lat", remaining.ind[k] ], centroid$x, centroid$y , method = "distance") # get the distance between the individual and the centroid
+  }
+  assign( paste0( "d2c_",i+1), dist2cent)
+  print( paste0(i, "/4"))
+}
+d2c_6 = d2c_5
+for ( k in  1:2){ 
+  
+  dist2cent[,k] = longFlight::get_dist( data[,"lon",remaining.ind[k] ], data[, "lat", remaining.ind[k] ], centroid$x, centroid$y , method = "distance") # get the distance between the individual and the centroid
+}
+
+for ( k in  1:2){ 
+  vec [k+4] = dimnames(dist2cent)[[2]][k]
+  vec2[k+4] = which(dist2cent[,k] >fis.dist)[1]
+}
+dist = c(50,1000) 
+
+{
+  pdf( file.path(PROJHOME , "Figures", "speed-at-split.pdf"),useDingbats = F)
+  { par(mfcol = c(3,3))
+    for ( i in 1:6){
+      par(mar = c(2,2,2,2))
+      
+      d = get(paste0("d2c_",i))
+      plot(d[(vec2[i]-dist[1]):(vec2[i]+dist[1]),vec[i]],xaxt = "n",type = "l", xlab = "Time (s)", ylab = "Distance to centroid (m)",main = paste( "Pigeon", vec[i]),ylim = c(0,200))
+      axis( 1, at = c(0,dist[1],(2*dist[1])), labels = c(-(dist[1]/5), 0,(dist[1]/5) ))
+      abline(h=50,col= "red")
+      abline(v=dist[1],col = "red")
+      plot(speed.mat[(vec2[i]-dist[1]):(vec2[i]+dist[1]),vec[i]],type = "l", ylim = c(0,35),xaxt = "n", xlab = "Time (s)", ylab = "Ground speed (m/s)")
+      axis( 1, at = c(0,dist[1],(2*dist[1])), labels = c(-(dist[1]/5), 0,(dist[1]/5) ))
+      abline(v=dist[1],col = "red")
+      plot(speed.mat[(vec2[i]-dist[2]):(vec2[i]+dist[2]),vec[i]],type = "l",ylim = c(0,35),xaxt = "n", xlab = "Time (s)", ylab = "Ground speed (m/s)")
+      abline(v=dist[2],col = "red")
+      axis( 1, at = c(0,dist[2],(2*dist[2])), labels = c(-(dist[2]/5), 0,(dist[2]/5) ))
+    }                                           }         
+  dev.off()
+}
+```
+
+#split = 5861*5
+
+sq = c( 100,1000)
+{
+par(mfcol = c(2,3))
+for (  j in 1:length(sq)){
+for ( i in 1:6 ){
+#i=1
+x1 = speed.mat[(split[i]-sq[j]):split[i],i]
+x2 = speed.mat[(split[i]+1):(split[i]+sq[j]),i]
+
+c1 = dist2cent[(split[i]-sq[j]):split[i],i]
+c2 = dist2cent[(split[i]+1):(split[i]+sq[j]),i]
+{
+plot(c(x1,x2),xaxt = "n", xlab = "Time (s)",ylim = c(0,25),
+ylab = "Ground Speed (m/s)")
+axis( 1, at = c( 0,
+sq[j],
+(2*sq[j]) ), labels = c(-sq[j]/5,
+0,
+sq[j]/5))
+}
+{
+plot(c(c1,c2),xaxt = "n", xlab = "Time (s)",ylim = c(0,100),
+ylab = "distance to centroid")
+axis( 1, at = c( 0,
+sq[j],
+(2*sq[j]) ), labels = c(-sq[j]/5,
+0,
+sq[j]/5))
+}
+
+abline(v=sq[j])
+if( length(na.omit(x2[x2>5]) >5) ){
+#  print(t.test(x1[x1>5],x2[x2>5]))
+print(i)
+}
+}
+}
+}
+#plot(speed.mat[,1],type = "l")
+
+```

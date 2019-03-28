@@ -1,0 +1,296 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# 1. mGPS. modify (or, clean) GPS
+# 2. gGPS. group GPS data
+# 3. Centroid distances 
+# 4. Heat maps 
+
+
+## 1. mGPS. modify (or, clean) GPS
+
+```{R}
+
+#rm(list= ls())
+
+#libraries 
+
+library(longFlight)
+
+## files/folders 
+
+fold = file.path(PROJHOME , "Data" , "GPS")
+files.path = file.path( fold , list.files(fold))
+files = list.files(fold)
+file.new.path =  file.path(PROJHOME, "Output", "mGPS" , paste0( substr(files,1, (nchar(files)-4)),".rda" ))
+
+## mGPS
+
+for ( i in 1:length( files)){
+  #i=1
+  data = read.csv( files.path[i], header= T)
+  data = mGPS( data )
+  head(data)
+  save( data, file = file.new.path[i])
+  print(i)
+}
+
+```
+
+##2. gGPS. group GPS data
+```{R}
+
+# files/folders
+file_path = file.path( PROJHOME , "Output" , "mGPS") 
+files = list.files( file_path)
+out.folder = file.path(PROJHOME , "Output" , "gGPS")
+
+#gGPS
+data = gGPS( files, file_path )
+
+#rename individuals 
+dimnames(data) = list( NULL, dimnames(data)[[2]], str_split_fixed(files,"\\.",12)[,11])
+
+# save
+save( data , file= file.path(PROJHOME , "Output" , "gGPS", "g2.34-2.rda"))
+
+```
+
+
+# 3. Centroid distances 
+
+```{R}
+
+## DATA
+load( file.path( PROJHOME, "Output", "gGPS", "g2.34-2.rda")) # load group flight
+data[1:10,,]
+
+
+## OBJECTS
+
+pigeon = names(data[1,1,]) # pigeon names
+fis.dist = 50 # Distance in metres at which an individual is considered to have split from the group. See methods for justification
+cuts = 3 # cuts in the data for the heatplots
+
+## LIBRARIES 
+
+library(ggplot2)
+library(viridis)
+library(cowplot)
+library(longFlight)
+
+
+```
+
+
+```{R}
+
+if ( file.exists( file.path(PROJHOME , "Output", "centroid.rda"))){
+  
+  # centroid of whole group regardless of fission
+  centroid = data.frame( x = apply(data[,"lon",], 1, mean), y = apply(data[,"lat",], 1, mean)) 
+  
+  # distance to centroid
+  dist2cent = matrix(NA, nrow(data[,,1]), length(pigeon)) 
+  for ( j in 1:nrow(dist2cent)){ # for each timestep
+    for ( k in 1:length(pigeon)){ # for each pigeon
+      dist2cent[j,k] = get_dist( data[j,"lon",k], data[j, "lat", k], centroid$x[j], centroid$y[j] , method = "distance") # get the distance between the individual and the centroid
+    }
+  }
+  
+  fis.data = data
+  omit.list = list() # a list will store omitted individuals. 
+  
+  for ( j in 1:nrow(dist2cent)){ # for each timestamp 
+    
+    # record ommitted individuals
+    vec = vector() 
+    
+    # while there is at least one individual over the fission distance threshold
+    while( length( which(dist2cent[j,]  > fis.dist)) >0){ 
+      
+      # omit and calcutate new centroid
+      omit = which(dist2cent[j,]== max(dist2cent[j,], na.rm = T) ) 
+      fis.data[j,c("lat","lon"), omit] = NA 
+      centroid$x[j] = mean(fis.data[j,"lon",], na.rm = T) # 
+      centroid$y[j] = mean(fis.data[j,"lat",], na.rm = T)
+      
+      # distance to centroid - same as above
+      for( k in 1:length(pigeon)){
+        dist2cent[j,k] = get_dist( fis.data[j,"lon",k], fis.data[j, "lat", k], centroid$x[j], centroid$y[j] , method = "distance") 
+      }
+      
+      # build the vector of omitted individuals
+      vec = c(vec, omit) 
+    }
+    
+    #takestock
+    if(j == nrow(dist2cent)){
+      print(paste("done with pigeon" , k , "/",length(pigeon)))
+    }
+    
+    # store in the list
+    omit.list[[j]] = vec 
+  }
+  
+  # When did each individual split?
+  split.mat = matrix(NA, nrow(dist2cent),length(pigeon))
+  for ( k in 1:length(pigeon)){
+    for ( j in 1:nrow(dist2cent)){
+      
+      if ( length( omit.list[[j]]) == (length(pigeon)-1)){
+        split.mat[j,k] = T
+        
+      } else {
+        split.mat[j,k] = any(omit.list[[j]]==k)
+      }
+    }
+  }
+  
+  # total omitted individuals per time stamp
+  length.omit = rep(NA, nrow(dist2cent)) 
+  omit.mat = matrix( 0, length(pigeon), 1, dimnames = list(pigeon,NULL))
+  for ( j in 1:nrow(dist2cent)){  
+    if ( length( omit.list[[j]] > 0 )) { # if there were any ommitted individuals ....
+      omit.mat[pigeon[omit.list[[j]]],] =    
+        omit.mat[pigeon[omit.list[[j]]],] +1 # .... add one for each timestep
+    }
+    length.omit[j] = length( omit.list[[j]])
+  }
+  plot(length.omit)
+  
+  # frontback and leftright distances 
+  obj = fb_lr_d2c(data,centroid,dist2cent)
+  frontback.res.cent = obj[[1]]
+  leftright.res.cent = obj[[2]]
+  
+  # cohesive GPS
+  coh = which(length.omit >= 1)[1]
+  # dist2cent          =          dist2cent[1:coh,]
+  # frontback.res.cent = frontback.res.cent[1:coh,]
+  # leftright.res.cent = leftright.res.cent[1:coh,]
+  # GPS.coh  =   data[1:coh,,]
+  
+  #Save
+  save( centroid, file = file.path(PROJHOME , "Output", "centroid.rda"))
+  save( dist2cent,file = file.path(PROJHOME , "Output", "dist2cent.rda"))
+  save( omit.mat ,file = file.path(PROJHOME , "Output", "omit-mat.rda"))
+  save(length.omit,file= file.path(PROJHOME,  "Output", "length-omit.rda"))
+  save( split.mat,file = file.path(PROJHOME,  "Output", "split-mat.rda") )
+  save(frontback.res.cent, file = file.path(PROJHOME ,"Output","fb-res-cent.rda"))
+  save(leftright.res.cent, file = file.path(PROJHOME ,"Output","lr-res-cent.rda"))
+  save( GPS.coh , file = file.path(PROJHOME,"Output","GPS-coh.rda") )
+  
+} else {
+  
+  #load
+  load (  file.path(PROJHOME , "Output", "centroid.rda"))
+  load (  file.path(PROJHOME , "Output", "dist2cent.rda"))
+  load (  file.path(PROJHOME , "Output", "omit-mat.rda"))
+  load (  file.path(PROJHOME , "Output", "length-omit.rda"))
+  load (  file.path(PROJHOME , "Output", "fb-res-cent.rda"))
+  load (  file.path(PROJHOME , "Output", "lr-res-cent.rda"))
+  load (  file.path(PROJHOME , "Output", "GPS-coh.rda"))
+}
+```
+
+
+# 4. Heat maps
+
+```{R}
+
+
+# plot
+if (plot.density){
+  
+  g1 = build_heat(leftright.res.cent, frontback.res.cent, 1, cuts, uber_smoothness = 300)
+  
+  g2 = build_heat(leftright.res.cent, frontback.res.cent, 2, cuts, uber_smoothness = 300)
+  
+  g3 = build_heat(leftright.res.cent, frontback.res.cent, 3, cuts, uber_smoothness = 300)
+  
+  
+  #hist(leftright.res.cent)
+  
+  ggdraw () +
+    draw_plot(g1,0,0,0.4,1) +
+    draw_plot(g2,0.35,0,0.4,1) + 
+    draw_plot(g3,0.7,0,0.4,1)
+}
+
+plot(frontback.res.cent~leftright.res.cent)
+```
+
+
+
+```{R}
+
+dist.arr = array(NA, c(coh,6,6))
+for ( i in 1:6){
+  for ( j in 1:6){
+    if(i!=j){
+      dist.arr[,j,i] =  get_dist(dat[,"lon",i], 
+                                 dat[,"lat",i],
+                                 dat[,"lon",j],
+                                 dat[,"lat",j], method = "distance")
+    }
+  }
+}
+
+nn.mat = matrix(NA, coh, 6)
+
+for ( i in 1:6){
+  nn.mat[,i] = apply( dist.arr[,,i], 1, min, na.rm = T)
+}
+head(nn.mat)
+plot(rowMeans(nn.mat))
+
+```
+
+```{R}
+
+{plot(data[,"lon",1],data[,"lat",1])
+  
+  for ( i in 2:6){
+    lines( data[,"lon",i],data[,"lat",i] , col = i)
+  }
+}
+
+
+
+```
+
+
+
+```{R}
+if( !file.exists(file.path( PROJHOME , "Figures" , "Map.pdf"))){
+  
+  pdf( file.path( PROJHOME , "Figures" , "Map.pdf"))
+  
+  plot_map(data)
+  
+  dev.off()
+}
+
+```
+
+
+
+```{R}
+
+
+y = bm_plotDS(na.omit(rowMeans(nn.mat)),total.bins = 98,plot.error =F, return_means = F)
+
+
+```
+
+```{R}
+
+nn.coh = nn.mat
+save(nn.coh, file = file.path(PROJHOME , "Output", "nn-coh.rda"))
+
+
+```
+
